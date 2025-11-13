@@ -1,5 +1,17 @@
 from controller import Robot
 import math  # Import the mathematics library for calculating angles
+import os, sys
+import numpy as np
+
+ROOT = os.path.abspath (os.path.join(os.path.dirname(__file__),"..",".."))
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
+
+RESULTS_DIR = os.path.join(ROOT, "results")
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+from controllers.q_learning_agent.q_learning_agent import QLearningAgent
+from utils.rewards import calculate_reward
 
 TIMESTEP = 64
 MAX_V = 6.28  # e-puck Max speed
@@ -42,9 +54,14 @@ ACTION_FORWARD = 1  #
 ACTION_LEFT = 2  #
 ACTION_RIGHT = 3  #
 ACTION_STOP = 4  #
+ACTION_LIST = [ACTION_FORWARD, ACTION_LEFT, ACTION_RIGHT, ACTION_STOP]
+ACTION_SIZE = len(ACTION_LIST)
 # ===================================================================
+STATE_SIZE = N_SensorLevels * N_SensorLevels * N_SensorLevels * N_GoalLevels
 
 robot = Robot()
+
+agent = QLearningAgent(stateSize=STATE_SIZE, actionSize=ACTION_SIZE, learningRate=0.1, discountFactor=0.95, epsilon=1.0, epsilonMin=0.1, epsilonDecay=0.99)
 
 # 8 Infrared distance sensors: ps0..ps7
 ps = [robot.getDevice(f'ps{i}') for i in range(8)]
@@ -64,12 +81,19 @@ for m in (lw, rw):
     m.setPosition(float('inf'))
     m.setVelocity(0.0)
 
-# ===================================================================
-# ---  keyboard input ---
-# ===================================================================
-keyboard = robot.getKeyboard()
-keyboard.enable(TIMESTEP)
-# ===================================================================
+def velocityAction(action):
+    if action == ACTION_FORWARD:
+        return 0.5 * MAX_V, 0.5 * MAX_V
+    if action == ACTION_LEFT:
+        return -0.2 * MAX_V, 0.2 * MAX_V
+    if action == ACTION_RIGHT:
+        return 0.2 * MAX_V, -0.2 * MAX_V
+    return 0.0, 0.0
+
+# simulation loop
+
+prev_state = None
+prev_action = None
 
 while robot.step(TIMESTEP) != -1:
 
@@ -159,48 +183,26 @@ while robot.step(TIMESTEP) != -1:
     # --- 5 .action choose(from keyboard) ---
     # ===================================================================
 
+    #q learning choose action
+    actionIdx = agent.chooseAction(StateID)
+    chosenAction = ACTION_LIST[actionIdx]
 
-    key = keyboard.getKey()
-
-    # we use 1 2 3 4 to choose action
-
-    if key == ord('1'):
-        chosen_action = ACTION_FORWARD
-    elif key == ord('2'):
-        chosen_action = ACTION_LEFT
-    elif key == ord('3'):
-        chosen_action = ACTION_RIGHT
-    elif key == ord('4'):
-        chosen_action = ACTION_STOP
-    else:
-        # and if not use any key or use invalid key, robotic will stop
-        chosen_action = ACTION_STOP
-
-    # ===================================================================
-    # --- (new) 6. Motor Mapping ---
-    # ===================================================================
-    #
-
-    if chosen_action == ACTION_FORWARD:  # 1
-        # Forward
-        vL = 0.5 * MAX_V
-        vR = 0.5 * MAX_V
-    elif chosen_action == ACTION_LEFT:  # 2
-        # Left turn: The right wheel moves forward and the left wheel reverses (turning in place)
-        vL = -0.2 * MAX_V
-        vR = 0.2 * MAX_V
-    elif chosen_action == ACTION_RIGHT:  # 3
-        # Right turn: The left wheel moves forward and the right wheel reverses (turning in place)
-        vL = 0.2 * MAX_V
-        vR = -0.2 * MAX_V
-    elif chosen_action == ACTION_STOP:  # 4
-        # stop:
-        vL = 0.0
-        vR = 0.0
-    else:
-        vL = 0.0
-        vR = 0.0
-
-
+    #execute action
+    vL, vR = velocityAction(chosenAction)
     lw.setVelocity(vL)
     rw.setVelocity(vR)
+
+    # compute reward
+    reward, done = calculate_reward(robot_pos=(x, z), goal_pos=GOAL_POSITION, sensors=[val_left, val_front, val_right])
+
+    if prev_state is not None:
+        agent.update(prev_state, prev_action, reward, StateID)
+
+    prev_state = StateID
+    prev_action = actionIdx
+
+    if done:
+        print("episode finished")
+        agent.endEpisode()
+        agent.save(os.path.join(RESULTS_DIR, "q_table.npy"))
+        break

@@ -15,7 +15,7 @@ class QLearningAgent:
     def chooseAction(self, state: int)->int:
         if random.random() < self.epsilon:
             return random.randrange(self.actionSize)
-        return int(np.argmax(self.q[state]))
+        return int(np.argmax(self.qTable[state]))
     
     def update (self, state: int, action: int, reward: float, nextState: int)->None:
         bestNextAction = float(np.max(self.qTable[nextState]))
