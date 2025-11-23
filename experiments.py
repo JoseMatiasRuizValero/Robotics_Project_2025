@@ -151,7 +151,8 @@ def run_training():
 
             # get reward
             robot_pos = (x, z)
-            reward, done = calculate_reward(robot_pos, GOAL_POSITION, ps_values, action, prev_dist)
+            action_value = 4 if action == 0 else action
+            reward, done = calculate_reward(robot_pos, GOAL_POSITION, ps_values, action_value, prev_dist)
 
             prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
