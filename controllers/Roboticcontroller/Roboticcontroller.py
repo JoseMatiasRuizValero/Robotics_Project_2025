@@ -336,7 +336,7 @@ while robot.step(TIMESTEP) != -1:
        robot_pos=(x, z), 
        goal_pos=GOAL_POSITION, 
        sensors=[val_left, val_front, val_right],
-       action=chosenAction  # 添加这一行
+       action=chosenAction 
     )
 
     if prev_state is not None:
