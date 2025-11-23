@@ -38,5 +38,5 @@ class SARSAAgent:
         np.save(path, self.qTable)
 
     def load(self, path: str) -> None:
-
         self.qTable = np.load(path)
+
