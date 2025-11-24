@@ -198,7 +198,9 @@ while robot.step(TIMESTEP) !=-1:
     rw.setVelocity(vR)
 
     # compute reward
-    reward, done = calculate_reward(robot_pos=(x, z), goal_pos=GOAL_POSITION, sensors=[val_left, val_front, val_right])
+    reward, done = calculate_reward(robot_pos=(x, z), goal_pos=GOAL_POSITION, sensors=[val_left, val_front, val_right],
+                                    action=chosenAction
+                                    )
 
     if prev_state is not None:
         agent.update(prev_state, prev_action, reward, StateID)
@@ -330,7 +332,12 @@ while robot.step(TIMESTEP) != -1:
     rw.setVelocity(vR)
 
     # compute reward
-    reward, done = calculate_reward(robot_pos=(x, z), goal_pos=GOAL_POSITION, sensors=[val_left, val_front, val_right])
+    reward, done = calculate_reward(
+       robot_pos=(x, z), 
+       goal_pos=GOAL_POSITION, 
+       sensors=[val_left, val_front, val_right],
+       action=chosenAction 
+    )
 
     if prev_state is not None:
         agent.update(prev_state, prev_action, reward, StateID)

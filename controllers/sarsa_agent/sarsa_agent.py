@@ -19,9 +19,9 @@ class SARSAAgent:
         #   Epsilon-greedy policy
         if random.random() < self.epsilon:
             return random.randrange(self.actionSize)
-        return int(np.argmax(self.q[state]))
+        return int(np.argmax(self.qTable[state]))
     
-    def update (self, state: int, action: int, reward: float, nextState: int)->None:
+    def update (self, state: int, action: int, reward: float, nextState: int, nextAction: int)->None:
         # SARSA update (on policy)
         currentQ = float(self.qTable[state, action])
         nextQ = float(self.qTable[nextState, nextAction])
@@ -39,3 +39,4 @@ class SARSAAgent:
 
     def load(self, path: str) -> None:
         self.qTable = np.load(path)
+
