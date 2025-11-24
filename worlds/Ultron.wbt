@@ -16,6 +16,7 @@ TexturedBackground {
 TexturedBackgroundLight {
 }
 RectangleArena {
+  floorSize 2 2
 }
 E-puck {
   controller "Roboticcontroller"
