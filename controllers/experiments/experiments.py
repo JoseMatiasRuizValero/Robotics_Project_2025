@@ -63,6 +63,11 @@ def run_training():
     csv_path = os.path.join(project_root, f"results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
     
+    # get robot node for position reset
+    robot_node = robot.getSelf()
+    tField = robot_node.getField('translation')
+    rField = robot_node.getField('rotation')
+    
     for episode in range(NUM_EPISODES):
         # reset robot - stop motors first
         lw.setVelocity(0.0)
