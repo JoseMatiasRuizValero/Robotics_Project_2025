@@ -58,11 +58,12 @@ def run_sarsa_training():
 
     print(f"Starting SARSA training: {NUM_EPISODES} episodes")
 
-    # get robot node
-    robot_node = robot.getSelf()
-    tField = robot_node.getField('translation')
-    rField = robot_node.getField('rotation')
-    
+    # create unique csv path for this run
+    project_root = os.path.join(os.path.dirname(__file__), '../..')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = os.path.join(project_root, f"sarsa_results_{timestamp}.csv")
+    print(f"Saving results to: {csv_path}")
+
     for episode in range(NUM_EPISODES):
         # reset robot - stop motors first
         lw.setVelocity(0.0)
@@ -256,10 +257,7 @@ def run_sarsa_training():
         if (episode + 1) % 10 == 0:
             recent = get_recent_performance(episode_data, 10)
             print(f"  Last 10: {recent['success_rate']*100:.1f}% success, {recent['avg_steps']:.1f} avg steps")
-            # save every 10 episodes
-            project_root = os.path.join(os.path.dirname(__file__), '../..')
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_path = os.path.join(project_root, f"sarsa_results_{timestamp}.csv")
+            # save every 10 episodes to the same file
             with open(csv_path, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
                 writer.writeheader()
