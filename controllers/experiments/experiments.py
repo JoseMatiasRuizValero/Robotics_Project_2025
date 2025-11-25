@@ -29,8 +29,6 @@ MAX_STEPS = 650
 STATE_SIZE = 81
 ACTION_SIZE = 4
 
-episode_data = []
-
 def run_training():
     robot = Supervisor()
 
@@ -68,6 +66,9 @@ def run_training():
     tField = robot_node.getField('translation')
     rField = robot_node.getField('rotation')
     
+    # initialize episode data list
+    episode_data = []
+    
     for episode in range(NUM_EPISODES):
         # reset robot - stop motors first
         lw.setVelocity(0.0)
@@ -75,7 +76,7 @@ def run_training():
         robot.step(TIMESTEP)
         
         # reset robot position
-        start_x, start_z = 0.2, 0.2
+        start_x, start_z = 0.0, 0.0
         tField.setSFVec3f([start_x, 0.0, start_z])
         rField.setSFRotation([0, 1, 0, 0])
         
@@ -103,37 +104,30 @@ def run_training():
         
         # check if robot starts in collision
         if max_sensor_value > 500:
-            # try different positions
-            offsets = []
-            for d in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
-                offsets.append((d, d))
-                offsets.append((-d, d))
-                offsets.append((d, -d))
-                offsets.append((-d, -d))
-                offsets.append((d, 0))
-                offsets.append((-d, 0))
-                offsets.append((0, d))
-                offsets.append((0, -d))
-            moved = False
-            for offset_x, offset_z in offsets:
-                tField.setSFVec3f([offset_x, 0.0, offset_z])
-                for _ in range(15):
-                    robot.step(TIMESTEP)
-                ps_values = [s.getValue() for s in ps]
-                val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
-                val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
-                val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
-                if max([val_left, val_front, val_right]) <= 500:
-                    moved = True
-                    break
+            # try (0.2, 0.2) as fallback
+            tField.setSFVec3f([0.2, 0.0, 0.2])
+            for _ in range(30):
+                robot.step(TIMESTEP)
             
-            if not moved:
-                # skip episode if still in collision
+            # verify GPS updated
+            gps_x, _, gps_z = gps.getValues()
+            if abs(gps_x - 0.2) > 0.1 or abs(gps_z - 0.2) > 0.1:
+                for _ in range(20):
+                    robot.step(TIMESTEP)
+            
+            # check if safe now
+            ps_values = [s.getValue() for s in ps]
+            val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
+            val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
+            val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
+            
+            if max([val_left, val_front, val_right]) > 500:
+                # (0.2, 0.2) also in collision, skip episode
                 print(f"Warning: Episode {episode+1} - Robot starts in collision (sensor={max_sensor_value:.1f}), skipping...")
                 episode_data.append({
                     'episode': episode + 1,
                     'steps': 0,
-                    'total_reward': -100,  # collision penalty
+                    'total_reward': -200,  # collision penalty
                     'success': False,
                     'collisions': 1,
                     'epsilon': agent.epsilon
@@ -141,8 +135,9 @@ def run_training():
                 agent.endEpisode()
                 continue
             else:
-                # moved to safe position
-                print(f"Info: Episode {episode+1} - Moved robot to safe position (sensor={max([val_left, val_front, val_right]):.1f})")
+                # successfully moved to (0.2, 0.2)
+                start_x, start_z = 0.2, 0.2
+                print(f"Info: Episode {episode+1} - Moved robot to (0.2, 0.2) (sensor={max([val_left, val_front, val_right]):.1f})")
 
         # get starting position for distance calculation
         x, _, z = gps.getValues()
@@ -180,6 +175,11 @@ def run_training():
 
             # calculate state ID
             state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            
+            # ensure state is within valid range
+            if state < 0 or state >= STATE_SIZE:
+                print(f"Warning: Invalid state {state}, clamping to valid range")
+                state = max(0, min(STATE_SIZE - 1, state))
 
             # choose action
             action = agent.chooseAction(state)
@@ -230,6 +230,11 @@ def run_training():
                 state_G = 2
 
             next_state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            
+            # ensure next_state is within valid range
+            if next_state < 0 or next_state >= STATE_SIZE:
+                print(f"Warning: Invalid next_state {next_state}, clamping to valid range")
+                next_state = max(0, min(STATE_SIZE - 1, next_state))
 
             # get reward
             robot_pos = (x, z)
