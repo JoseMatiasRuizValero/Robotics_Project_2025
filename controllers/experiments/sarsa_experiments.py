@@ -183,11 +183,11 @@ def run_sarsa_training():
                 lw.setVelocity(0.5 * MAX_V)
                 rw.setVelocity(0.5 * MAX_V)
             elif action == 2:  # left
-                lw.setVelocity(-0.2 * MAX_V)
-                rw.setVelocity(0.2 * MAX_V)
+                lw.setVelocity(-0.15 * MAX_V)
+                rw.setVelocity(0.15 * MAX_V)
             elif action == 3:  # right
-                lw.setVelocity(0.2 * MAX_V)
-                rw.setVelocity(-0.2 * MAX_V)
+                lw.setVelocity(0.15 * MAX_V)
+                rw.setVelocity(-0.15 * MAX_V)
             else:  # stop (action == 0)
                 lw.setVelocity(0.0)
                 rw.setVelocity(0.0)

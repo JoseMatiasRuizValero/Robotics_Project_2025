@@ -98,9 +98,9 @@ def velocityAction(action):
     if action == ACTION_FORWARD:  # 1
         return 0.5 * MAX_V, 0.5 * MAX_V
     elif action == ACTION_LEFT:   # 2
-        return -0.2 * MAX_V, 0.2 * MAX_V
+        return -0.15 * MAX_V, 0.15 * MAX_V
     elif action == ACTION_RIGHT:  # 3
-        return 0.2 * MAX_V, -0.2 * MAX_V
+        return 0.15 * MAX_V, -0.15 * MAX_V
     elif action == ACTION_STOP:   # 0
         return 0.0, 0.0
     else:
