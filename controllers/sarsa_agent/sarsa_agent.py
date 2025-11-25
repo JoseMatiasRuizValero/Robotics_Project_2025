@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 class SARSAAgent:
-    def __init__ (self, stateSize, actionSize, learningRate = 0.2, discountFactor = 0.95, epsilon = 1.0, epsilonMin = 0.01, epsilonDecay = 0.995):
+    def __init__ (self, stateSize, actionSize, learningRate = 0.7, discountFactor = 0.90, epsilon = 1.0, epsilonMin = 0.1, epsilonDecay = 0.995):
         
         #   Assign vales
         self.stateSize = stateSize

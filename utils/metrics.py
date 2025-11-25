@@ -57,9 +57,10 @@ def print_training_summary(episodes):
     print(f"Average Steps: {avg_steps:.1f}")
     print(f"Average Reward: {avg_reward:.2f}")
 
-    # last 10 episodes
-    recent = get_recent_performance(episodes, 10)
-    print(f"\nLast 10 Episodes:")
+    # last 10 episodes (or fewer if total < 10)
+    n_recent = min(10, total)
+    recent = get_recent_performance(episodes, n_recent)
+    print(f"\nLast {n_recent} Episodes:")
     print(f"  Success Rate: {recent['success_rate']*100:.1f}%")
     print(f"  Average Steps: {recent['avg_steps']:.1f}")
     print(f"  Average Reward: {recent['avg_reward']:.2f}")

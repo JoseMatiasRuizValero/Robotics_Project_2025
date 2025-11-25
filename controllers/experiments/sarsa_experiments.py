@@ -15,7 +15,7 @@ from utils.metrics import print_training_summary, get_recent_performance
 
 TIMESTEP = 64
 MAX_V = 6.28
-GOAL_POSITION = (0.8, 0.8)
+GOAL_POSITION = (0.5, 0.5)
 
 # sensor groups from Hanpei's code
 PS_GROUP_FRONT = [0, 7]
@@ -25,7 +25,7 @@ SENSOR_THRESHOLDS = [100.0, 500.0]
 
 # training params
 NUM_EPISODES = 1000
-MAX_STEPS = 650
+MAX_STEPS = 1000
 STATE_SIZE = 81
 ACTION_SIZE = 4
 
@@ -76,13 +76,14 @@ def run_sarsa_training():
         rw.setVelocity(0.0)
         robot.step(TIMESTEP)
         
-        # reset robot position
+        # complete physics reset
         start_x, start_z = 0.0, 0.0
-        tField.setSFVec3f([start_x, 0.0, start_z])
+        robot_node.resetPhysics()  # clear all velocities and forces
+        tField.setSFVec3f([start_x, 0.005, start_z])
         rField.setSFRotation([0, 1, 0, 0])
         
-        # wait for sensors
-        for _ in range(20):
+        # wait for physics to stabilize
+        for _ in range(30):
             robot.step(TIMESTEP)
 
         total_reward = 0
@@ -91,9 +92,9 @@ def run_sarsa_training():
         collisions = 0  # track number of collisions
         prev_dist = None
 
-        # check initial collision
+        # check initial collision - extended check
         max_sensor_value = 0
-        for _ in range(5):
+        for _ in range(10):
             ps_values = [s.getValue() for s in ps]
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
@@ -105,8 +106,12 @@ def run_sarsa_training():
         
         # Skip episode if starts in collision
         if max_sensor_value > 500:
-            # try (0.2, 0.2) as fallback
-            tField.setSFVec3f([0.2, 0.0, 0.2])
+            # try (0.2, 0.2) as fallback with complete physics reset
+            robot_node.resetPhysics()
+            tField.setSFVec3f([0.2, 0.005, 0.2])
+            rField.setSFRotation([0, 1, 0, 0])
+            lw.setVelocity(0.0)
+            rw.setVelocity(0.0)
             for _ in range(30):
                 robot.step(TIMESTEP)
             
@@ -116,7 +121,10 @@ def run_sarsa_training():
                 for _ in range(20):
                     robot.step(TIMESTEP)
             
-            # check if safe now
+            # clear sensor history and recheck
+            for _ in range(10):
+                robot.step(TIMESTEP)
+            
             ps_values = [s.getValue() for s in ps]
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
@@ -187,11 +195,11 @@ def run_sarsa_training():
                 lw.setVelocity(0.5 * MAX_V)
                 rw.setVelocity(0.5 * MAX_V)
             elif action == 2:  # left
-                lw.setVelocity(-0.15 * MAX_V)
-                rw.setVelocity(0.15 * MAX_V)
+                lw.setVelocity(-0.08 * MAX_V)
+                rw.setVelocity(0.08 * MAX_V)
             elif action == 3:  # right
-                lw.setVelocity(0.15 * MAX_V)
-                rw.setVelocity(-0.15 * MAX_V)
+                lw.setVelocity(0.08 * MAX_V)
+                rw.setVelocity(-0.08 * MAX_V)
             else:  # stop (action == 0)
                 lw.setVelocity(0.0)
                 rw.setVelocity(0.0)
@@ -200,8 +208,24 @@ def run_sarsa_training():
 
             # get next state
             ps_values = [s.getValue() for s in ps]
-            x, _, z = gps.getValues()
+            x, y, z = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
+            
+            # check for GPS anomaly
+            if math.isnan(x) or math.isnan(z) or abs(x) > 10 or abs(z) > 10:
+                print(f"Warning: SARSA Episode {episode+1} Step {step+1} - GPS anomaly detected ({x}, {z}), ending episode")
+                break
+            
+            # Flip detection removed - normal physics causes y > 0.05 during turns
+            # Collision detection via sensors is sufficient
+            
+            # check if robot out of bounds
+            if abs(x) > 0.95 or abs(z) > 0.95:
+                print(f"Warning: SARSA Episode {episode+1} Step {step+1} - Robot out of bounds ({x:.2f}, {z:.2f}), ending episode")
+                reward = -200
+                total_reward += reward
+                collisions += 1
+                break
 
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
@@ -281,10 +305,23 @@ def run_sarsa_training():
             recent = get_recent_performance(episode_data, 10)
             print(f"  Last 10: {recent['success_rate']*100:.1f}% success, {recent['avg_steps']:.1f} avg steps")
             # save every 10 episodes to the same file
-            with open(csv_path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
-                writer.writeheader()
-                writer.writerows(episode_data)
+            try:
+                with open(csv_path, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
+                    writer.writeheader()
+                    writer.writerows(episode_data)
+            except PermissionError:
+                backup_path = csv_path.replace('.csv', '_backup.csv')
+                print(f"Warning: Could not save to {csv_path} (in use). Saving to {backup_path} instead.")
+                try:
+                    with open(backup_path, 'w', newline='') as f:
+                        writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
+                        writer.writeheader()
+                        writer.writerows(episode_data)
+                except Exception as e:
+                    print(f"Error writing backup CSV: {e}")
+            except Exception as e:
+                print(f"Warning: Error saving CSV: {e}")
 
     # save final results
     project_root = os.path.join(os.path.dirname(__file__), '../..')
