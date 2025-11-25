@@ -25,7 +25,7 @@ SENSOR_THRESHOLDS = [100.0, 500.0]
 
 # training params
 NUM_EPISODES = 1000
-MAX_STEPS = 500
+MAX_STEPS = 650
 STATE_SIZE = 81
 ACTION_SIZE = 4
 
@@ -104,11 +104,17 @@ def run_sarsa_training():
         
         # Skip episode if starts in collision
         if max_sensor_value > 500:
-            offsets = [
-                (0.3, 0.3), (-0.3, 0.3), (0.3, -0.3), (-0.3, -0.3),
-                (0.2, 0.0), (-0.2, 0.0), (0.0, 0.2), (0.0, -0.2),
-                (0.4, 0.0), (-0.4, 0.0), (0.0, 0.4), (0.0, -0.4)
-            ]
+            # try different positions
+            offsets = []
+            for d in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
+                offsets.append((d, d))
+                offsets.append((-d, d))
+                offsets.append((d, -d))
+                offsets.append((-d, -d))
+                offsets.append((d, 0))
+                offsets.append((-d, 0))
+                offsets.append((0, d))
+                offsets.append((0, -d))
             moved = False
             for offset_x, offset_z in offsets:
                 tField.setSFVec3f([offset_x, 0.0, offset_z])
@@ -134,6 +140,10 @@ def run_sarsa_training():
                 })
                 agent.endEpisode()
                 continue
+
+        # get starting position for distance
+        x, _, z = gps.getValues()
+        prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
         # Get initial state
         ps_values = [s.getValue() for s in ps]
@@ -215,9 +225,8 @@ def run_sarsa_training():
 
             # get reward
             robot_pos = (x, z)
-            action_value = 4 if action == 0 else action
             sensor_values = [val_left, val_front, val_right]
-            reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action_value, prev_dist)
+            reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist)
 
             # track collisions
             if reward == -100:
