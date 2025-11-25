@@ -10,8 +10,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.22511063708225035 -0.19642058125884762 0.9543291656081562 4.53032838704064
-  position 0.5325631584329202 2.166901067224161 0.6220135766645851
+  orientation 0.6343873689046189 -0.3136345327917273 -0.706530994376602 3.8136956628561864
+  position 0.2474604358170025 -0.8870084727031735 1.4066308466198925
 }
 TexturedBackground {
 }
@@ -56,6 +56,8 @@ OilBarrel {
   radius 0.1
 }
 E-puck {
+  translation 0 -0.91 0
+  rotation 0 0 1 1.5708
   controller "Roboticcontroller"
   supervisor TRUE
   turretSlot [
