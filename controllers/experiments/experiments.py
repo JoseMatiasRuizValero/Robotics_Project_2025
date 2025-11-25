@@ -237,7 +237,7 @@ def run_training():
             reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist)
 
             # track collisions
-            if reward == -100:
+            if reward == -200:
                 collisions += 1
 
             prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
