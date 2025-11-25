@@ -8,28 +8,31 @@ def calculate_reward(robot_pos, goal_pos, sensors, action, prev_distance=None):
 
     # reached goal
     if dist < 0.1:
-        return 100, True
+        return 200, True
 
     # collision
     if max(sensors) > 500:
-        return -50, True
+        return -200, True
 
-    # each step costs -1
-    reward = -1
+    # each step costs -0.2
+    reward = -0.2
 
     # discourage stopping
-    if action == 4:
-        reward -= 2
+    if action == 0:
+        reward -= 5
 
     # reward for getting closer to goal
-    # this helps speed up learning
     if prev_distance is not None:
         distance_change = prev_distance - dist
         if distance_change > 0:
-            # moving closer - small reward
-            reward += distance_change * 5
+            # moving closer - large reward
+            reward += distance_change * 50
         else:
-            # moving away - small penalty
-            reward += distance_change * 3
+            # moving away - penalty
+            reward += distance_change * 30
+    
+    # bonus for being close to goal
+    if dist < 0.3:
+        reward += 3
 
     return reward, False

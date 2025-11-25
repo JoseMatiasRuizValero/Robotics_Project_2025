@@ -48,13 +48,13 @@ N_GoalLevels   = 3 # (0, 1, 2)
 # ===================================================================
 
 # ===================================================================
-# ---1. Define the robotic action set
+# ---1. Define the robotic action set (0-based indexing)
 # ===================================================================
-ACTION_FORWARD = 1  #
-ACTION_LEFT = 2  #
-ACTION_RIGHT = 3  #
-ACTION_STOP = 4  #
-ACTION_LIST = [ACTION_FORWARD, ACTION_LEFT, ACTION_RIGHT, ACTION_STOP]
+ACTION_STOP = 0
+ACTION_FORWARD = 1
+ACTION_LEFT = 2
+ACTION_RIGHT = 3
+ACTION_LIST = [ACTION_STOP, ACTION_FORWARD, ACTION_LEFT, ACTION_RIGHT]
 ACTION_SIZE = len(ACTION_LIST)
 # ===================================================================
 STATE_SIZE = N_SensorLevels * N_SensorLevels * N_SensorLevels * N_GoalLevels
@@ -94,13 +94,17 @@ agent = QLearningAgent(stateSize=STATE_SIZE, actionSize=ACTION_SIZE, learningRat
 
 
 def velocityAction(action):
-    if action == ACTION_FORWARD:
+    """Execute action - action is 0,1,2,3"""
+    if action == ACTION_FORWARD:  # 1
         return 0.5 * MAX_V, 0.5 * MAX_V
-    if action == ACTION_LEFT:
-        return -0.2 * MAX_V, 0.2 * MAX_V
-    if action == ACTION_RIGHT:
-        return 0.2 * MAX_V, -0.2 * MAX_V
-    return 0.0, 0.0
+    elif action == ACTION_LEFT:   # 2
+        return -0.15 * MAX_V, 0.15 * MAX_V
+    elif action == ACTION_RIGHT:  # 3
+        return 0.15 * MAX_V, -0.15 * MAX_V
+    elif action == ACTION_STOP:   # 0
+        return 0.0, 0.0
+    else:
+        return 0.0, 0.0  # fallback
 
 
 

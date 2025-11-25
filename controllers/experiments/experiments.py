@@ -2,9 +2,13 @@ from controller import Robot, Supervisor
 import sys
 import math
 import csv
+import os
 from datetime import datetime
 
-sys.path.append('controllers')
+# add paths for imports
+sys.path.append('..')
+sys.path.append('../..')
+
 from q_learning_agent.q_learning_agent import QLearningAgent
 from utils.rewards import calculate_reward
 from utils.metrics import print_training_summary, get_recent_performance
@@ -20,12 +24,10 @@ PS_GROUP_RIGHT = [1, 2]
 SENSOR_THRESHOLDS = [100.0, 500.0]
 
 # training params
-NUM_EPISODES = 100
-MAX_STEPS = 500
+NUM_EPISODES = 1000
+MAX_STEPS = 650
 STATE_SIZE = 81
 ACTION_SIZE = 4
-
-episode_data = []
 
 def run_training():
     robot = Supervisor()
@@ -53,19 +55,93 @@ def run_training():
 
     print(f"Starting training: {NUM_EPISODES} episodes")
 
+    # create unique csv path for this run
+    project_root = os.path.join(os.path.dirname(__file__), '../..')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = os.path.join(project_root, f"results_{timestamp}.csv")
+    print(f"Saving results to: {csv_path}")
+    
+    # get robot node for position reset
+    robot_node = robot.getSelf()
+    tField = robot_node.getField('translation')
+    rField = robot_node.getField('rotation')
+    
+    # initialize episode data list
+    episode_data = []
+    
     for episode in range(NUM_EPISODES):
-        # reset robot
-        robot_node = robot.getFromDef('EPUCK')
-        if robot_node:
-            robot_node.getField('translation').setSFVec3f([0.0, 0.0, 0.0])
-            robot_node.getField('rotation').setSFRotation([0, 1, 0, 0])
-
+        # reset robot - stop motors first
+        lw.setVelocity(0.0)
+        rw.setVelocity(0.0)
         robot.step(TIMESTEP)
+        
+        # reset robot position
+        start_x, start_z = 0.0, 0.0
+        tField.setSFVec3f([start_x, 0.0, start_z])
+        rField.setSFRotation([0, 1, 0, 0])
+        
+        # wait for sensors
+        for _ in range(20):
+            robot.step(TIMESTEP)
 
         total_reward = 0
         steps = 0
         success = False
+        collisions = 0  # track number of collisions in this episode
         prev_dist = None
+
+        # check initial collision
+        max_sensor_value = 0
+        for _ in range(5):
+            ps_values = [s.getValue() for s in ps]
+            val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
+            val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
+            val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
+            current_max = max([val_left, val_front, val_right])
+            if current_max > max_sensor_value:
+                max_sensor_value = current_max
+            robot.step(TIMESTEP)
+        
+        # check if robot starts in collision
+        if max_sensor_value > 500:
+            # try (0.2, 0.2) as fallback
+            tField.setSFVec3f([0.2, 0.0, 0.2])
+            for _ in range(30):
+                robot.step(TIMESTEP)
+            
+            # verify GPS updated
+            gps_x, _, gps_z = gps.getValues()
+            if abs(gps_x - 0.2) > 0.1 or abs(gps_z - 0.2) > 0.1:
+                for _ in range(20):
+                    robot.step(TIMESTEP)
+            
+            # check if safe now
+            ps_values = [s.getValue() for s in ps]
+            val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
+            val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
+            val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
+            
+            if max([val_left, val_front, val_right]) > 500:
+                # (0.2, 0.2) also in collision, skip episode
+                print(f"Warning: Episode {episode+1} - Robot starts in collision (sensor={max_sensor_value:.1f}), skipping...")
+                episode_data.append({
+                    'episode': episode + 1,
+                    'steps': 0,
+                    'total_reward': -200,  # collision penalty
+                    'success': False,
+                    'collisions': 1,
+                    'epsilon': agent.epsilon
+                })
+                agent.endEpisode()
+                continue
+            else:
+                # successfully moved to (0.2, 0.2)
+                start_x, start_z = 0.2, 0.2
+                print(f"Info: Episode {episode+1} - Moved robot to (0.2, 0.2) (sensor={max([val_left, val_front, val_right]):.1f})")
+
+        # get starting position for distance calculation
+        x, _, z = gps.getValues()
+        prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
         for step in range(MAX_STEPS):
             # get sensor values
@@ -99,21 +175,27 @@ def run_training():
 
             # calculate state ID
             state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            
+            # ensure state is within valid range
+            if state < 0 or state >= STATE_SIZE:
+                print(f"Warning: Invalid state {state}, clamping to valid range")
+                state = max(0, min(STATE_SIZE - 1, state))
 
             # choose action
             action = agent.chooseAction(state)
 
             # execute action
+            # Note: action is 0,1,2,3 (stop, forward, left, right)
             if action == 1:  # forward
                 lw.setVelocity(0.5 * MAX_V)
                 rw.setVelocity(0.5 * MAX_V)
             elif action == 2:  # left
-                lw.setVelocity(-0.2 * MAX_V)
-                rw.setVelocity(0.2 * MAX_V)
+                lw.setVelocity(-0.15 * MAX_V)
+                rw.setVelocity(0.15 * MAX_V)
             elif action == 3:  # right
-                lw.setVelocity(0.2 * MAX_V)
-                rw.setVelocity(-0.2 * MAX_V)
-            else:  # stop
+                lw.setVelocity(0.15 * MAX_V)
+                rw.setVelocity(-0.15 * MAX_V)
+            else:  # stop (action == 0)
                 lw.setVelocity(0.0)
                 rw.setVelocity(0.0)
 
@@ -148,11 +230,20 @@ def run_training():
                 state_G = 2
 
             next_state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            
+            # ensure next_state is within valid range
+            if next_state < 0 or next_state >= STATE_SIZE:
+                print(f"Warning: Invalid next_state {next_state}, clamping to valid range")
+                next_state = max(0, min(STATE_SIZE - 1, next_state))
 
             # get reward
             robot_pos = (x, z)
-            action_value = 4 if action == 0 else action
-            reward, done = calculate_reward(robot_pos, GOAL_POSITION, ps_values, action_value, prev_dist)
+            sensor_values = [val_left, val_front, val_right]
+            reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist)
+
+            # track collisions
+            if reward == -200:
+                collisions += 1
 
             prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
@@ -170,30 +261,31 @@ def run_training():
 
         agent.endEpisode()
 
-        # save data
+        # save episode data
         episode_data.append({
             'episode': episode + 1,
             'steps': steps,
             'total_reward': total_reward,
             'success': success,
+            'collisions': collisions,
             'epsilon': agent.epsilon
         })
 
         status = "SUCCESS" if success else "FAILED"
-        print(f"Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, ε: {agent.epsilon:.3f}")
+        print(f"Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, Collisions: {collisions}, ε: {agent.epsilon:.3f}")
 
         if (episode + 1) % 10 == 0:
             recent = get_recent_performance(episode_data, 10)
             print(f"  Last 10: {recent['success_rate']*100:.1f}% success, {recent['avg_steps']:.1f} avg steps")
-            # save every 10 episodes
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"results_{timestamp}.csv", 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'epsilon'])
+            # save every 10 episodes to the same file
+            with open(csv_path, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
                 writer.writeheader()
                 writer.writerows(episode_data)
 
     # save final results
-    agent.save('q_table_final.npy')
+    project_root = os.path.join(os.path.dirname(__file__), '../..')
+    agent.save(os.path.join(project_root, 'q_table_final.npy'))
     print_training_summary(episode_data)
 
 if __name__ == "__main__":
