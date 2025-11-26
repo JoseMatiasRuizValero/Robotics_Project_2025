@@ -15,7 +15,8 @@ from utils.metrics import print_training_summary, get_recent_performance
 
 TIMESTEP = 64
 MAX_V = 6.28
-GOAL_POSITION = (0.8, 0.8)
+GOAL_POSITION = (0.4, 0.4)
+SUCCESS_RADIUS = 0.8
 
 # sensor groups from Hanpei's code
 PS_GROUP_FRONT = [0, 7]
@@ -76,9 +77,11 @@ def run_training():
         robot.step(TIMESTEP)
         
         # reset robot position
-        start_x, start_z = 0.0, 0.0
+        start_x, start_z = -0.7, -0.7
         tField.setSFVec3f([start_x, 0.0, start_z])
         rField.setSFRotation([0, 1, 0, 0])
+        #reset physics
+        robot_node.resetPhysics()
         
         # wait for sensors
         for _ in range(20):
@@ -106,6 +109,7 @@ def run_training():
         if max_sensor_value > 500:
             # try (0.2, 0.2) as fallback
             tField.setSFVec3f([0.2, 0.0, 0.2])
+            robot_node.resetPhysics()
             for _ in range(30):
                 robot.step(TIMESTEP)
             
@@ -142,6 +146,9 @@ def run_training():
         # get starting position for distance calculation
         x, _, z = gps.getValues()
         prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+
+        dist_to_goal = prev_dist
+        min_dist = prev_dist
 
         for step in range(MAX_STEPS):
             # get sensor values
@@ -242,19 +249,31 @@ def run_training():
             reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist)
 
             # track collisions
-            if reward == -200:
+            dist_to_goal = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+
+            if reward <= -70:
                 collisions += 1
 
-            prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+            # update prev_dist for next step
+            prev_dist = dist_to_goal
 
-            if done and reward > 0:
+            if dist_to_goal < SUCCESS_RADIUS:
                 success = True
+                done = True
 
             # update
             agent.update(state, action, reward, next_state)
 
             total_reward += reward
             steps += 1
+
+            x, _, z = gps.getValues()
+            dist_to_goal = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+
+            prev_dist = dist_to_goal
+
+            if dist_to_goal < min_dist:
+                min_dist = dist_to_goal
 
             if done:
                 break
@@ -272,7 +291,7 @@ def run_training():
         })
 
         status = "SUCCESS" if success else "FAILED"
-        print(f"Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, Collisions: {collisions}, ε: {agent.epsilon:.3f}")
+        print(f"Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, Collisions: {collisions}, Distance: {dist_to_goal:.2f}, MinDist: {min_dist:.2f}, ε: {agent.epsilon:.3f}")
 
         if (episode + 1) % 10 == 0:
             recent = get_recent_performance(episode_data, 10)

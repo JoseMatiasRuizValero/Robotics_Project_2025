@@ -6,33 +6,34 @@ def get_distance(pos1, pos2):
 def calculate_reward(robot_pos, goal_pos, sensors, action, prev_distance=None):
     dist = get_distance(robot_pos, goal_pos)
 
-    # reached goal
-    if dist < 0.1:
-        return 200, True
+    SUCCESS_RADIUS = 0.8
+    CLOSE_RADIUS = 1.2
+    STEP_PENALTY = -0.005
+    STOP_PENALTY = -0.3
+    COLLISION_PENALTY = -80.0
+    COLLISION_SENSOR_THRESHOLD = 500
 
-    # collision
-    if max(sensors) > 500:
-        return -200, True
+    PROGRESS_SCALE = 40.0
+    DISTANCE_SCALE = 0.5
 
-    # each step costs -0.2
-    reward = -0.2
+    if dist < SUCCESS_RADIUS:
+        return 300.0, True
 
-    # discourage stopping
+    if max(sensors) > COLLISION_SENSOR_THRESHOLD:
+        return COLLISION_PENALTY, True
+
+    reward = STEP_PENALTY
+
     if action == 0:
-        reward -= 5
+        reward += STOP_PENALTY
 
-    # reward for getting closer to goal
     if prev_distance is not None:
         distance_change = prev_distance - dist
-        if distance_change > 0:
-            # moving closer - large reward
-            reward += distance_change * 50
-        else:
-            # moving away - penalty
-            reward += distance_change * 30
-    
-    # bonus for being close to goal
-    if dist < 0.3:
-        reward += 3
+        reward += PROGRESS_SCALE * distance_change
+
+    reward -= DISTANCE_SCALE * dist
+
+    if dist < CLOSE_RADIUS:
+        reward += 2.0
 
     return reward, False
