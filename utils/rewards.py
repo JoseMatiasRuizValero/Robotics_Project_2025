@@ -6,7 +6,7 @@ def get_distance(pos1, pos2):
 def calculate_reward(robot_pos, goal_pos, sensors, action, prev_distance=None):
     dist = get_distance(robot_pos, goal_pos)
 
-    SUCCESS_RADIUS = 0.8
+    SUCCESS_RADIUS = 0.4
     CLOSE_RADIUS = 1.2
     STEP_PENALTY = -0.005
     STOP_PENALTY = -0.3

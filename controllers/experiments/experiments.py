@@ -16,7 +16,7 @@ from utils.metrics import print_training_summary, get_recent_performance
 TIMESTEP = 64
 MAX_V = 6.28
 GOAL_POSITION = (0.4, 0.4)
-SUCCESS_RADIUS = 0.8
+SUCCESS_RADIUS = 0.4
 
 # sensor groups from Hanpei's code
 PS_GROUP_FRONT = [0, 7]
@@ -29,6 +29,11 @@ NUM_EPISODES = 1000
 MAX_STEPS = 650
 STATE_SIZE = 81
 ACTION_SIZE = 4
+LEARNING_RATE = 0.2
+DISCOUNT_FACTOR = 0.90
+EPSILON = 1.0
+EPSILON_MIN = 0.03
+EPSILON_DECAY = 0.99
 
 def run_training():
     robot = Supervisor()
@@ -52,7 +57,7 @@ def run_training():
     rw.setVelocity(0.0)
 
     # create agent
-    agent = QLearningAgent(STATE_SIZE, ACTION_SIZE)
+    agent = QLearningAgent(STATE_SIZE, ACTION_SIZE, learningRate = LEARNING_RATE, discountFactor = DISCOUNT_FACTOR, epsilon= EPSILON, epsilonMin= EPSILON_MIN, epsilonDecay=EPSILON_DECAY)
 
     print(f"Starting training: {NUM_EPISODES} episodes")
 
