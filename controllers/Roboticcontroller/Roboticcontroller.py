@@ -22,7 +22,7 @@ MAX_V = 6.28  # e-puck Max speed
 
 
 # This is (x, z) position
-GOAL_POSITION = (0.5, 0.5)  
+GOAL_POSITION = (0.6, 0.6)  
 
 
 # Corrected sensor grouping (based on e-puck standard layout)
@@ -92,7 +92,7 @@ def reset_robot (x=0.0, z=0.0, yaw=0.0):
     lw.setVelocity(0.0)
     rw.setVelocity(0.0)
 
-agent = QLearningAgent(stateSize=STATE_SIZE, actionSize=ACTION_SIZE, learningRate=0.7, discountFactor=0.90, epsilon=1.0, epsilonMin=0.1, epsilonDecay=0.995)
+agent = QLearningAgent(stateSize=STATE_SIZE, actionSize=ACTION_SIZE, learningRate=0.1, discountFactor=0.95, epsilon=1.0, epsilonMin=0.1, epsilonDecay=0.995)
 
 
 

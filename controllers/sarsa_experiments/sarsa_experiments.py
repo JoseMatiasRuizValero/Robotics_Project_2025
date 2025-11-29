@@ -17,6 +17,7 @@ TIMESTEP = 64
 MAX_V = 6.28
 GOAL_POSITION = (0.6, 0.6)
 
+# sensor groups from Hanpei's code
 PS_GROUP_FRONT = [0, 7]
 PS_GROUP_LEFT = [5, 6]
 PS_GROUP_RIGHT = [1, 2]
@@ -30,13 +31,17 @@ ACTION_SIZE = 4
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 
+# Staged success radius: (radius, episodes_at_this_stage)
+# Total episodes = sum of all stage episodes
+# Final target: 0.56 (0.55 proved too strict for 81-state discretization)
 SUCCESS_RADIUS_STAGES = [
-    (0.6, 200),
-    (0.58, 300),
-    (0.56, 500),
+    (0.6, 200),   # Stage 0: episodes 0-199, easy radius
+    (0.58, 300),  # Stage 1: episodes 200-499
+    (0.56, 500),  # Stage 2: episodes 500-999, target radius
 ]
 
-STAGE_TRANSITION_EPSILON = 0.5
+# Epsilon reset when transitioning between stages
+STAGE_TRANSITION_EPSILON = 0.5  # Reset epsilon to this value when radius shrinks
 
 LOAD_EXISTING_QTABLE = True
 QTABLE_WARM_START_PATH = os.path.join(PROJECT_ROOT, 'sarsa_q_table_stage.npy')
@@ -45,6 +50,7 @@ WARMUP_MIN_EPSILON = 0.8
 SAVE_STAGE_QTABLE = True
 
 def run_sarsa_training():
+    # train SARSA agent
     robot = Supervisor()
 
     # setup sensors
@@ -57,6 +63,7 @@ def run_sarsa_training():
     imu = robot.getDevice('inertial unit')
     imu.enable(TIMESTEP)
 
+    # motors
     lw = robot.getDevice('left wheel motor')
     rw = robot.getDevice('right wheel motor')
     lw.setPosition(float('inf'))
@@ -64,6 +71,7 @@ def run_sarsa_training():
     lw.setVelocity(0.0)
     rw.setVelocity(0.0)
 
+    # create SARSA agent
     agent = SARSAAgent(STATE_SIZE, ACTION_SIZE)
 
     if LOAD_EXISTING_QTABLE and os.path.exists(QTABLE_WARM_START_PATH):
@@ -75,37 +83,42 @@ def run_sarsa_training():
 
     print(f"Starting SARSA training: {NUM_EPISODES} episodes")
 
+    # create unique csv path for this run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = os.path.join(PROJECT_ROOT, f"sarsa_results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
 
+    # get robot node for position reset
     robot_node = robot.getSelf()
     tField = robot_node.getField('translation')
     rField = robot_node.getField('rotation')
     
+    # initialize episode data list
     episode_data = []
 
     for episode in range(NUM_EPISODES):
-        # reset robot
+        # reset robot - stop motors first
         lw.setVelocity(0.0)
         rw.setVelocity(0.0)
         robot.step(TIMESTEP)
         
+        # complete physics reset
         start_x, start_z = 0.0, 0.0
-        robot_node.resetPhysics()
+        robot_node.resetPhysics()  # clear all velocities and forces
         tField.setSFVec3f([start_x, 0.005, start_z])
         rField.setSFRotation([0, 1, 0, 0])
         
+        # wait for physics to stabilize
         for _ in range(30):
             robot.step(TIMESTEP)
 
         total_reward = 0
         steps = 0
         success = False
-        collisions = 0
+        collisions = 0  # track number of collisions
         prev_dist = None
 
-        # check initial collision
+        # check initial collision - extended check
         max_sensor_value = 0
         for _ in range(10):
             ps_values = [s.getValue() for s in ps]
@@ -117,8 +130,9 @@ def run_sarsa_training():
                 max_sensor_value = current_max
             robot.step(TIMESTEP)
         
-        # try fallback position if collision
+        # Skip episode if starts in collision
         if max_sensor_value > 500:
+            # try (0.2, 0.2) as fallback with complete physics reset
             robot_node.resetPhysics()
             tField.setSFVec3f([0.2, 0.005, 0.2])
             rField.setSFRotation([0, 1, 0, 0])
@@ -127,11 +141,13 @@ def run_sarsa_training():
             for _ in range(30):
                 robot.step(TIMESTEP)
             
+            # verify GPS updated
             gps_x, _, gps_z = gps.getValues()
             if abs(gps_x - 0.2) > 0.1 or abs(gps_z - 0.2) > 0.1:
                 for _ in range(20):
                     robot.step(TIMESTEP)
             
+            # clear sensor history and recheck
             for _ in range(10):
                 robot.step(TIMESTEP)
             
@@ -141,6 +157,7 @@ def run_sarsa_training():
             val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
             
             if max([val_left, val_front, val_right]) > 500:
+                # (0.2, 0.2) also in collision, skip episode
                 print(f"Warning: SARSA Episode {episode+1} - Robot starts in collision (sensor={max_sensor_value:.1f}), skipping...")
                 episode_data.append({
                     'episode': episode + 1,
@@ -156,13 +173,15 @@ def run_sarsa_training():
                     agent.endEpisode()
                 continue
             else:
+                # successfully moved to (0.2, 0.2)
                 start_x, start_z = 0.2, 0.2
                 print(f"Info: SARSA Episode {episode+1} - Moved robot to (0.2, 0.2) (sensor={max([val_left, val_front, val_right]):.1f})")
 
-        # get starting position
+        # get starting position for distance
         x, _, z = gps.getValues()
         prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
+        # Get initial state
         ps_values = [s.getValue() for s in ps]
         x, _, z = gps.getValues()
         yaw = imu.getRollPitchYaw()[2]
@@ -187,21 +206,22 @@ def run_sarsa_training():
         elif relative_angle < 0:
             state_G = 1
         else:
-                state_G = 2
+            state_G = 2
 
         state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
         
+        # ensure state is within valid range
         if state < 0 or state >= STATE_SIZE:
             print(f"Warning: Invalid state {state}, clamping to valid range")
             state = max(0, min(STATE_SIZE - 1, state))
 
-        # choose initial action for SARSA
+        # choose initial action
         action = agent.chooseAction(state)
 
-        # determine current stage
+        # Determine current stage and success radius
         cumulative_episodes = 0
         current_stage = 0
-        current_success_radius = SUCCESS_RADIUS_STAGES[-1][0]
+        current_success_radius = SUCCESS_RADIUS_STAGES[-1][0]  # default to final
         for stage_idx, (radius, stage_episodes) in enumerate(SUCCESS_RADIUS_STAGES):
             if episode < cumulative_episodes + stage_episodes:
                 current_success_radius = radius
@@ -209,34 +229,35 @@ def run_sarsa_training():
                 break
             cumulative_episodes += stage_episodes
 
-        # check for stage transition
+        # Check if we just transitioned to a new stage (reset epsilon)
         if episode > 0:
             prev_cumulative = 0
             for stage_idx, (radius, stage_episodes) in enumerate(SUCCESS_RADIUS_STAGES):
                 if episode == prev_cumulative + stage_episodes:
+                    # Just entered a new stage
                     agent.epsilon = max(agent.epsilon, STAGE_TRANSITION_EPSILON)
                     print(f">>> SARSA Stage transition: radius changed to {SUCCESS_RADIUS_STAGES[stage_idx + 1][0] if stage_idx + 1 < len(SUCCESS_RADIUS_STAGES) else current_success_radius}, epsilon reset to {agent.epsilon:.3f}")
                     break
                 prev_cumulative += stage_episodes
 
         for step in range(MAX_STEPS):
-            # execute action (0=stop, 1=forward, 2=left, 3=right)
-            if action == 1:
+            # execute action
+            if action == 1:  # forward
                 lw.setVelocity(0.5 * MAX_V)
                 rw.setVelocity(0.5 * MAX_V)
-            elif action == 2:
+            elif action == 2:  # left
                 lw.setVelocity(-0.08 * MAX_V)
                 rw.setVelocity(0.08 * MAX_V)
-            elif action == 3:
+            elif action == 3:  # right
                 lw.setVelocity(0.08 * MAX_V)
                 rw.setVelocity(-0.08 * MAX_V)
-            else:
+            else:  # stop (action == 0)
                 lw.setVelocity(0.0)
                 rw.setVelocity(0.0)
 
             robot.step(TIMESTEP)
 
-            # get sensor and position data
+            # get next state
             ps_values = [s.getValue() for s in ps]
             x, y, z = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
@@ -246,7 +267,10 @@ def run_sarsa_training():
                 print(f"Warning: SARSA Episode {episode+1} Step {step+1} - GPS anomaly detected ({x}, {z}), ending episode")
                 break
             
-            # check boundaries
+            # Flip detection removed - normal physics causes y > 0.05 during turns
+            # Collision detection via sensors is sufficient
+            
+            # check if robot out of bounds
             if abs(x) > 0.95 or abs(z) > 0.95:
                 print(f"Warning: SARSA Episode {episode+1} Step {step+1} - Robot out of bounds ({x:.2f}, {z:.2f}), ending episode")
                 reward = -100
@@ -278,24 +302,26 @@ def run_sarsa_training():
 
             next_state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
             
+            # ensure next_state is within valid range
             if next_state < 0 or next_state >= STATE_SIZE:
                 print(f"Warning: Invalid next_state {next_state}, clamping to valid range")
                 next_state = max(0, min(STATE_SIZE - 1, next_state))
 
-            # calculate reward
+            # get reward
             robot_pos = (x, z)
             sensor_values = [val_left, val_front, val_right]
             reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist, success_radius=current_success_radius)
 
+            # track collisions
             if reward == -100:
-                collisions = collisions + 1
+                collisions += 1
 
             prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
             if done and reward > 0:
                 success = True
 
-            # choose next action
+            # choose next action for SARSA update
             next_action = agent.chooseAction(next_state)
 
             # SARSA update
@@ -307,7 +333,7 @@ def run_sarsa_training():
             if done:
                 break
 
-            # move to next state
+            # update for next step
             state = next_state
             action = next_action
 
@@ -316,6 +342,7 @@ def run_sarsa_training():
         else:
             agent.endEpisode()
 
+        # save data
         episode_data.append({
             'episode': episode + 1,
             'steps': steps,
@@ -328,11 +355,10 @@ def run_sarsa_training():
         status = "SUCCESS" if success else "FAILED"
         print(f"SARSA Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, Collisions: {collisions}, ε: {agent.epsilon:.3f}")
 
-        # print stats every 10 episodes
         if (episode + 1) % 10 == 0:
             recent = get_recent_performance(episode_data, 10)
             print(f"  Last 10: {recent['success_rate']*100:.1f}% success, {recent['avg_steps']:.1f} avg steps")
-            # save to CSV
+            # save every 10 episodes to the same file
             try:
                 with open(csv_path, 'w', newline='') as f:
                     writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
@@ -351,7 +377,7 @@ def run_sarsa_training():
             except Exception as e:
                 print(f"Warning: Error saving CSV: {e}")
 
-    # save final Q-table
+    # save final results
     agent.save(os.path.join(PROJECT_ROOT, 'sarsa_q_table_final.npy'))
     if SAVE_STAGE_QTABLE:
         agent.save(QTABLE_WARM_START_PATH)
