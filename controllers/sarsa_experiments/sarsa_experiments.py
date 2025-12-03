@@ -18,11 +18,11 @@ MAX_V = 6.28
 
 # ============= MAP CONFIGURATION =============
 # Change MAP_TYPE to test different environments
-MAP_TYPE = "original"  # Options: "test1", "test2", "original"
+MAP_TYPE = "test1"  # Options: "test1", "test2", "original"
 
 if MAP_TYPE == "test1":
     # Test1: 2x2 map with 3 barrels + 3 panels
-    GOAL_POSITION = (0.6, 0.6)
+    GOAL_POSITION = (0.8, -0.3)
     START_POSITION = (0.0, -0.8)
     FALLBACK_POSITION = (0.0, -0.6)
     print("Map: test1 (2x2 with obstacles)")
@@ -63,10 +63,10 @@ ACTION_SIZE = 4
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 
 LOAD_EXISTING_QTABLE = True
-QTABLE_PATH = os.path.join(PROJECT_ROOT, 'sarsa_q_table.npy')
+RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
+QTABLE_PATH = os.path.join(RESULTS_DIR, 'sarsa_q_table.npy')
 WARMUP_EPISODES = 100
 WARMUP_MIN_EPSILON = 0.8
-SAVE_QTABLE = True
 
 def run_sarsa_training():
     robot = Supervisor()
@@ -100,7 +100,7 @@ def run_sarsa_training():
     print(f"Starting SARSA training: {NUM_EPISODES} episodes")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = os.path.join(PROJECT_ROOT, f"sarsa_results_{timestamp}.csv")
+    csv_path = os.path.join(RESULTS_DIR, f"sarsa_results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
 
     robot_node = robot.getSelf()
@@ -357,9 +357,7 @@ def run_sarsa_training():
                 print(f"Warning: Error saving CSV: {e}")
 
     # save final Q-table
-    agent.save(os.path.join(PROJECT_ROOT, 'sarsa_q_table_final.npy'))
-    if SAVE_QTABLE:
-        agent.save(QTABLE_PATH)
+    agent.save(QTABLE_PATH)
     print_training_summary(episode_data)
 
 if __name__ == "__main__":

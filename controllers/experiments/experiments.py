@@ -18,11 +18,11 @@ MAX_V = 6.28
 
 # ============= MAP CONFIGURATION =============
 # Change MAP_TYPE to test different environments
-MAP_TYPE = "original"  # Options: "test1", "test2", "original"
+MAP_TYPE = "test1"  # Options: "test1", "test2", "original"
 
 if MAP_TYPE == "test1":
     # Test1: 2x2 map with 3 barrels + 3 panels
-    GOAL_POSITION = (0.6, 0.6)
+    GOAL_POSITION = (0.8, -0.3)
     START_POSITION = (0.0, -0.8)
     FALLBACK_POSITION = (0.0, -0.6)
     print("Map: test1 (2x2 with obstacles)")
@@ -94,8 +94,9 @@ def run_training():
 
     # create unique csv path for this run
     project_root = os.path.join(os.path.dirname(__file__), '../..')
+    results_dir = os.path.join(project_root, 'results')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = os.path.join(project_root, f"results_{timestamp}.csv")
+    csv_path = os.path.join(results_dir, f"results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
     
     # get robot node for position reset
@@ -336,7 +337,8 @@ def run_training():
 
     # save final results
     project_root = os.path.join(os.path.dirname(__file__), '../..')
-    agent.save(os.path.join(project_root, 'q_table_final.npy'))
+    results_dir = os.path.join(project_root, 'results')
+    agent.save(os.path.join(results_dir, 'q_table.npy'))
     print_training_summary(episode_data)
 
 if __name__ == "__main__":

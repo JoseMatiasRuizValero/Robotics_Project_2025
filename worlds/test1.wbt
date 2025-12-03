@@ -11,7 +11,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation 0.26766736683386466 -0.26934691209266026 -0.9250980605743231 4.640844994650875
-  position -0.1576001949289616 -3.5371659376303453 2.153519373301238
+  position -0.16398992894712205 -4.559515366383574 2.7991992195911632
 }
 TexturedBackground {
 }
@@ -39,7 +39,7 @@ Panel {
   size 0.02 0.5 0.2
 }
 OilBarrel {
-  translation 0.23 -0.64 0.03
+  translation 0.19 -0.61 0.03
   name "oil barrel(2)"
   height 0.1
   radius 0.1
