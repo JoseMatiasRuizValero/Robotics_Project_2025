@@ -10,19 +10,16 @@ def calculate_success_rate(episodes):
     return successes / len(episodes)
 
 def calculate_avg_steps(episodes):
-    if len(episodes) == 0:
+    if not episodes:
         return 0
-    total = 0
-    for ep in episodes:
-        total += ep['steps']
-    return total / len(episodes)
+    return sum(ep['steps'] for ep in episodes) / len(episodes)
 
 def calculate_avg_reward(episodes):
     if len(episodes) == 0:
         return 0
     total = 0
     for ep in episodes:
-        total += ep['total_reward']
+        total = total + ep['total_reward']
     return total / len(episodes)
 
 def get_recent_performance(episodes, last_n=10):
@@ -58,8 +55,9 @@ def print_training_summary(episodes):
     print(f"Average Reward: {avg_reward:.2f}")
 
     # last 10 episodes
-    recent = get_recent_performance(episodes, 10)
-    print(f"\nLast 10 Episodes:")
+    n_recent = min(10, total)
+    recent = get_recent_performance(episodes, n_recent)
+    print(f"\nLast {n_recent} Episodes:")
     print(f"  Success Rate: {recent['success_rate']*100:.1f}%")
     print(f"  Average Steps: {recent['avg_steps']:.1f}")
     print(f"  Average Reward: {recent['avg_reward']:.2f}")
