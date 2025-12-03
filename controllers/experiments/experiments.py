@@ -10,13 +10,46 @@ sys.path.append('..')
 sys.path.append('../..')
 
 from q_learning_agent.q_learning_agent import QLearningAgent
-from utils.rewards import calculate_reward
+from utils.rewards import calculate_reward, COLLISION_PENALTY
 from utils.metrics import print_training_summary, get_recent_performance
 
 TIMESTEP = 64
 MAX_V = 6.28
-GOAL_POSITION = (0.6, 0.6)
 
+# ============= MAP CONFIGURATION =============
+# Change MAP_TYPE to test different environments
+MAP_TYPE = "test1"  # Options: "test1", "test2", "original"
+
+if MAP_TYPE == "test1":
+    # Test1: 2x2 map with 3 barrels + 3 panels
+    GOAL_POSITION = (0.8, -0.3)
+    START_POSITION = (0.0, -0.8)
+    FALLBACK_POSITION = (0.0, -0.6)
+    print("Map: test1 (2x2 with obstacles)")
+    
+elif MAP_TYPE == "test2":
+    # Test2: 2x2 maze with panels
+    GOAL_POSITION = (0.6, 0.6)
+    START_POSITION = (0.0, -0.8)
+    FALLBACK_POSITION = (0.0, -0.6)
+    print("Map: test2 (2x2 maze)")
+    
+else:  # original (Ultron.wbt)
+    # Original: 2x2 open map
+    GOAL_POSITION = (0.4, 0.4)
+    START_POSITION = (-0.7, -0.7)
+    FALLBACK_POSITION = (0.2, 0.2)
+    print("Map: original (2x2 open)")
+
+# Common settings for all maps
+START_Y = 0.0
+START_ROTATION = [0, 1, 0, 0]
+MAP_BOUNDARY_X = 0.95
+MAP_BOUNDARY_Z = 0.95
+SUCCESS_RADIUS = 0.4
+# =============================================
+
+# sensor groups from Hanpei's code
 PS_GROUP_FRONT = [0, 7]
 PS_GROUP_LEFT = [5, 6]
 PS_GROUP_RIGHT = [1, 2]
@@ -27,22 +60,11 @@ NUM_EPISODES = 1000
 MAX_STEPS = 1000
 STATE_SIZE = 81
 ACTION_SIZE = 4
-
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-
-SUCCESS_RADIUS_STAGES = [
-    (0.6, 200),
-    (0.58, 300),
-    (0.56, 500),
-]
-
-STAGE_TRANSITION_EPSILON = 0.5
-
-LOAD_EXISTING_QTABLE = True
-QTABLE_WARM_START_PATH = os.path.join(PROJECT_ROOT, 'q_table_stage.npy')
-WARMUP_EPISODES = 100
-WARMUP_MIN_EPSILON = 0.8
-SAVE_STAGE_QTABLE = True
+LEARNING_RATE = 0.2
+DISCOUNT_FACTOR = 0.90
+EPSILON = 1.0
+EPSILON_MIN = 0.03
+EPSILON_DECAY = 0.99
 
 def run_training():
     robot = Supervisor()
@@ -57,6 +79,7 @@ def run_training():
     imu = robot.getDevice('inertial unit')
     imu.enable(TIMESTEP)
 
+    # motors
     lw = robot.getDevice('left wheel motor')
     rw = robot.getDevice('right wheel motor')
     lw.setPosition(float('inf'))
@@ -64,50 +87,51 @@ def run_training():
     lw.setVelocity(0.0)
     rw.setVelocity(0.0)
 
-    agent = QLearningAgent(STATE_SIZE, ACTION_SIZE)
-
-    if LOAD_EXISTING_QTABLE and os.path.exists(QTABLE_WARM_START_PATH):
-        try:
-            agent.load(QTABLE_WARM_START_PATH)
-            print(f"Loaded existing Q-table from {QTABLE_WARM_START_PATH}")
-        except Exception as exc:
-            print(f"Warning: failed to load Q-table ({exc}), starting from scratch")
+    # create agent
+    agent = QLearningAgent(STATE_SIZE, ACTION_SIZE, learningRate = LEARNING_RATE, discountFactor = DISCOUNT_FACTOR, epsilon= EPSILON, epsilonMin= EPSILON_MIN, epsilonDecay=EPSILON_DECAY)
 
     print(f"Starting training: {NUM_EPISODES} episodes")
 
+    # create unique csv path for this run
+    project_root = os.path.join(os.path.dirname(__file__), '../..')
+    results_dir = os.path.join(project_root, 'results')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = os.path.join(PROJECT_ROOT, f"results_{timestamp}.csv")
+    csv_path = os.path.join(results_dir, f"results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
     
+    # get robot node for position reset
     robot_node = robot.getSelf()
     tField = robot_node.getField('translation')
     rField = robot_node.getField('rotation')
     
+    # initialize episode data list
     episode_data = []
     
     for episode in range(NUM_EPISODES):
-        # reset robot
+        # reset robot - stop motors first
         lw.setVelocity(0.0)
         rw.setVelocity(0.0)
         robot.step(TIMESTEP)
         
-        start_x, start_z = 0.0, 0.0
+        # reset robot position
+        start_x, start_z = START_POSITION
         robot_node.resetPhysics()
-        tField.setSFVec3f([start_x, 0.005, start_z])
-        rField.setSFRotation([0, 1, 0, 0])
+        tField.setSFVec3f([start_x, start_z, START_Y])
+        rField.setSFRotation(START_ROTATION)
         
-        for _ in range(30):
+        # wait for sensors
+        for _ in range(20):
             robot.step(TIMESTEP)
 
         total_reward = 0
         steps = 0
         success = False
-        collisions = 0
+        collisions = 0  # track number of collisions in this episode
         prev_dist = None
 
         # check initial collision
         max_sensor_value = 0
-        for _ in range(10):
+        for _ in range(5):
             ps_values = [s.getValue() for s in ps]
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
@@ -117,93 +141,59 @@ def run_training():
                 max_sensor_value = current_max
             robot.step(TIMESTEP)
         
-        # try fallback position if collision
+        # check if robot starts in collision
         if max_sensor_value > 500:
+            # try fallback position
             robot_node.resetPhysics()
-            tField.setSFVec3f([0.2, 0.005, 0.2])
-            rField.setSFRotation([0, 1, 0, 0])
-            lw.setVelocity(0.0)
-            rw.setVelocity(0.0)
+            tField.setSFVec3f([FALLBACK_POSITION[0], FALLBACK_POSITION[1], START_Y])
+            rField.setSFRotation(START_ROTATION)
             for _ in range(30):
                 robot.step(TIMESTEP)
             
+            # verify GPS updated
             gps_x, _, gps_z = gps.getValues()
-            if abs(gps_x - 0.2) > 0.1 or abs(gps_z - 0.2) > 0.1:
+            if abs(gps_x - FALLBACK_POSITION[0]) > 0.1 or abs(gps_z - FALLBACK_POSITION[1]) > 0.1:
                 for _ in range(20):
                     robot.step(TIMESTEP)
             
-            for _ in range(10):
-                robot.step(TIMESTEP)
-            
+            # check if safe now
             ps_values = [s.getValue() for s in ps]
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
             val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
             
             if max([val_left, val_front, val_right]) > 500:
+                # fallback position also in collision, skip episode
                 print(f"Warning: Episode {episode+1} - Robot starts in collision (sensor={max_sensor_value:.1f}), skipping...")
                 episode_data.append({
                     'episode': episode + 1,
                     'steps': 0,
-                    'total_reward': -100,
+                    'total_reward': COLLISION_PENALTY,
                     'success': False,
                     'collisions': 1,
                     'epsilon': agent.epsilon
                 })
-                if episode < WARMUP_EPISODES:
-                    agent.epsilon = max(agent.epsilon, WARMUP_MIN_EPSILON)
-                else:
-                    agent.endEpisode()
+                agent.endEpisode()
                 continue
             else:
-                start_x, start_z = 0.2, 0.2
-                print(f"Info: Episode {episode+1} - Moved robot to (0.2, 0.2) (sensor={max([val_left, val_front, val_right]):.1f})")
+                # successfully moved to fallback position
+                start_x, start_z = FALLBACK_POSITION
+                print(f"Info: Episode {episode+1} - Moved robot to fallback position (sensor={max([val_left, val_front, val_right]):.1f})")
 
-        # get starting position
+        # get starting position for distance calculation
         x, _, z = gps.getValues()
         prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
-        # determine current stage
-        cumulative_episodes = 0
-        current_stage = 0
-        current_success_radius = SUCCESS_RADIUS_STAGES[-1][0]
-        for stage_idx, (radius, stage_episodes) in enumerate(SUCCESS_RADIUS_STAGES):
-            if episode < cumulative_episodes + stage_episodes:
-                current_success_radius = radius
-                current_stage = stage_idx
-                break
-            cumulative_episodes += stage_episodes
-
-        # check for stage transition
-        if episode > 0:
-            prev_cumulative = 0
-            for stage_idx, (radius, stage_episodes) in enumerate(SUCCESS_RADIUS_STAGES):
-                if episode == prev_cumulative + stage_episodes:
-                    agent.epsilon = max(agent.epsilon, STAGE_TRANSITION_EPSILON)
-                    print(f">>> Stage transition: radius changed to {SUCCESS_RADIUS_STAGES[stage_idx + 1][0] if stage_idx + 1 < len(SUCCESS_RADIUS_STAGES) else current_success_radius}, epsilon reset to {agent.epsilon:.3f}")
-                    break
-                prev_cumulative += stage_episodes
+        dist_to_goal = prev_dist
+        min_dist = prev_dist
 
         for step in range(MAX_STEPS):
-            # get sensor and position data
+            # get sensor values
             ps_values = [s.getValue() for s in ps]
-            x, y, z = gps.getValues()
+            x, _, z = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
-            
-            # check for GPS anomaly
-            if math.isnan(x) or math.isnan(z) or abs(x) > 10 or abs(z) > 10:
-                print(f"Warning: Episode {episode+1} Step {step+1} - GPS anomaly detected ({x}, {z}), ending episode")
-                break
-            
-            # check boundaries
-            if abs(x) > 0.95 or abs(z) > 0.95:
-                print(f"Warning: Episode {episode+1} Step {step+1} - Robot out of bounds ({x:.2f}, {z:.2f}), ending episode")
-                reward = -100
-                total_reward += reward
-                collisions += 1
-                break
 
-            # discretize sensors
+            # discretize sensors (copied from Hanpei)
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
             val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
@@ -212,7 +202,7 @@ def run_training():
             state_L = 0 if val_left < 100 else (1 if val_left < 500 else 2)
             state_R = 0 if val_right < 100 else (1 if val_right < 500 else 2)
 
-            # calculate goal direction
+            # goal direction
             target_angle = math.atan2(GOAL_POSITION[1] - z, GOAL_POSITION[0] - x)
             relative_angle = target_angle - yaw
             if relative_angle > math.pi:
@@ -230,6 +220,7 @@ def run_training():
             # calculate state ID
             state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
             
+            # ensure state is within valid range
             if state < 0 or state >= STATE_SIZE:
                 print(f"Warning: Invalid state {state}, clamping to valid range")
                 state = max(0, min(STATE_SIZE - 1, state))
@@ -237,17 +228,18 @@ def run_training():
             # choose action
             action = agent.chooseAction(state)
 
-            # execute action (0=stop, 1=forward, 2=left, 3=right)
-            if action == 1:
+            # execute action
+            # Note: action is 0,1,2,3 (stop, forward, left, right)
+            if action == 1:  # forward
                 lw.setVelocity(0.5 * MAX_V)
                 rw.setVelocity(0.5 * MAX_V)
-            elif action == 2:
-                lw.setVelocity(-0.08 * MAX_V)
-                rw.setVelocity(0.08 * MAX_V)
-            elif action == 3:
-                lw.setVelocity(0.08 * MAX_V)
-                rw.setVelocity(-0.08 * MAX_V)
-            else:
+            elif action == 2:  # left
+                lw.setVelocity(-0.15 * MAX_V)
+                rw.setVelocity(0.15 * MAX_V)
+            elif action == 3:  # right
+                lw.setVelocity(0.15 * MAX_V)
+                rw.setVelocity(-0.15 * MAX_V)
+            else:  # stop (action == 0)
                 lw.setVelocity(0.0)
                 rw.setVelocity(0.0)
 
@@ -258,6 +250,7 @@ def run_training():
             x, _, z = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
 
+            # recalculate state (same as above)
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
             val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
@@ -282,37 +275,45 @@ def run_training():
 
             next_state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
             
+            # ensure next_state is within valid range
             if next_state < 0 or next_state >= STATE_SIZE:
                 print(f"Warning: Invalid next_state {next_state}, clamping to valid range")
                 next_state = max(0, min(STATE_SIZE - 1, next_state))
 
-            # calculate reward
+            # get reward
             robot_pos = (x, z)
             sensor_values = [val_left, val_front, val_right]
-            reward, done = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist, success_radius=current_success_radius)
+            reward, done, collided = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist)
 
-            if reward == -100:
-                collisions = collisions + 1
+            # track collisions
+            if collided:
+                collisions += 1
 
-            prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+            # calculate distance to goal
+            dist_to_goal = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
 
-            if done and reward > 0:
+            # update prev_dist for next step
+            prev_dist = dist_to_goal
+
+            # check success based on reward function result
+            if done and not collided:
                 success = True
 
-            # update Q-table
+            # update
             agent.update(state, action, reward, next_state)
 
             total_reward += reward
             steps += 1
 
+            if dist_to_goal < min_dist:
+                min_dist = dist_to_goal
+
             if done:
                 break
 
-        if episode < WARMUP_EPISODES:
-            agent.epsilon = max(agent.epsilon, WARMUP_MIN_EPSILON)
-        else:
-            agent.endEpisode()
+        agent.endEpisode()
 
+        # save episode data
         episode_data.append({
             'episode': episode + 1,
             'steps': steps,
@@ -323,35 +324,21 @@ def run_training():
         })
 
         status = "SUCCESS" if success else "FAILED"
-        print(f"Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, Collisions: {collisions}, ε: {agent.epsilon:.3f}")
+        print(f"Ep {episode+1}/{NUM_EPISODES} - {status} - Steps: {steps}, Reward: {total_reward:.2f}, Collisions: {collisions}, Distance: {dist_to_goal:.2f}, MinDist: {min_dist:.2f}, ε: {agent.epsilon:.3f}")
 
-        # print stats every 10 episodes
         if (episode + 1) % 10 == 0:
             recent = get_recent_performance(episode_data, 10)
             print(f"  Last 10: {recent['success_rate']*100:.1f}% success, {recent['avg_steps']:.1f} avg steps")
-            # save to CSV
-            try:
-                with open(csv_path, 'w', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
-                    writer.writeheader()
-                    writer.writerows(episode_data)
-            except PermissionError:
-                backup_path = csv_path.replace('.csv', '_backup.csv')
-                print(f"Warning: Could not save to {csv_path} (in use). Saving to {backup_path} instead.")
-                try:
-                    with open(backup_path, 'w', newline='') as f:
-                        writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
-                        writer.writeheader()
-                        writer.writerows(episode_data)
-                except Exception as e:
-                    print(f"Error writing backup CSV: {e}")
-            except Exception as e:
-                print(f"Warning: Error saving CSV: {e}")
+            # save every 10 episodes to the same file
+            with open(csv_path, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
+                writer.writeheader()
+                writer.writerows(episode_data)
 
-    # save final Q-table
-    agent.save(os.path.join(PROJECT_ROOT, 'q_table_final.npy'))
-    if SAVE_STAGE_QTABLE:
-        agent.save(QTABLE_WARM_START_PATH)
+    # save final results
+    project_root = os.path.join(os.path.dirname(__file__), '../..')
+    results_dir = os.path.join(project_root, 'results')
+    agent.save(os.path.join(results_dir, 'q_table.npy'))
     print_training_summary(episode_data)
 
 if __name__ == "__main__":

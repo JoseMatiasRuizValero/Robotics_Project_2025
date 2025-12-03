@@ -19,7 +19,7 @@ RectangleArena {
   floorSize 2 2
 }
 E-puck {
-  controller "Roboticcontroller"
+  controller "experiments"
   supervisor TRUE
   turretSlot [
     InertialUnit {
