@@ -1,64 +1,75 @@
 import math
 
-DEFAULT_SUCCESS_RADIUS = 0.56
-SUCCESS_REWARD = 400
-INNER_RADIUS_MULTIPLIER = 0.5
-INNER_RADIUS_BONUS = 40
-COLLISION_THRESHOLD = 500
-COLLISION_PENALTY = -100
-WARNING_THRESHOLD = 400
-DANGER_THRESHOLD = 450
-STEP_COST = -0.5
-STOP_EXTRA_COST = -1.5
-DISTANCE_GAIN = 3.0
+DEFAULT_SUCCESS_RADIUS = 0.4
+COLLISION_SENSOR_THRESHOLD = 500.0
+COLLISION_PENALTY = -80.0
+
+STEP_PENALTY = -0.005
+STOP_PENALTY = -0.3
+
+PROGRESS_SCALE = 40.0      # reward for reducing distance
+DISTANCE_SCALE = 0.5       # penalty for being far from goal
+CLOSE_RADIUS = 1.2
+CLOSE_BONUS = 2.0
+
+WARNING_THRESHOLD = 400.0
+WARNING_PENALTY = -3.0     
+DANGER_THRESHOLD = 450.0
+DANGER_PENALTY = -6.0
 
 
 def get_distance(pos1, pos2):
-    return math.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
+    return math.sqrt((pos1[0]-pos2[0])**2 + (pos1[1]-pos2[1])**2)
 
 
-def calculate_reward(robot_pos, goal_pos, sensors, action, prev_distance=None, success_radius=None):
-    # reward function for robot navigation
-    radius = success_radius or DEFAULT_SUCCESS_RADIUS
+def calculate_reward(
+    robot_pos,
+    goal_pos,
+    sensors,
+    action,
+    prev_distance=None,
+    success_radius=None
+):
+    """
+    Returns:
+        reward (float)
+        done (bool)
+        collided (bool)
+    """
+    radius = success_radius if success_radius is not None else DEFAULT_SUCCESS_RADIUS
     dist = get_distance(robot_pos, goal_pos)
     max_sensor = max(sensors)
 
-    # check if reached goal
+    # --- Success ---
     if dist < radius:
-        return SUCCESS_REWARD, True
+        return 300.0, True, False
 
-    # check collision
-    if max_sensor > COLLISION_THRESHOLD:
-        return COLLISION_PENALTY, True
+    # --- Collision ---
+    if max_sensor > COLLISION_SENSOR_THRESHOLD:
+        return COLLISION_PENALTY, True, True
 
-    reward = STEP_COST
+    reward = STEP_PENALTY
 
-    # penalize stopping
+    # penalise stopping
     if action == 0:
-        reward += STOP_EXTRA_COST
+        reward += STOP_PENALTY
 
-    # distance-based shaping
+    # progress shaping: reward reduction in distance
     if prev_distance is not None:
         distance_change = prev_distance - dist
-        reward += distance_change * DISTANCE_GAIN
+        reward += PROGRESS_SCALE * distance_change
 
-    # proximity bonus
-    if dist < 0.45:
-        reward += 5
-    if dist < 0.3:
-        reward += 10
-    if dist < 0.2:
-        reward += 15
-    if dist < 0.1:
-        reward += 25
+    # distance shaping: being far is costly
+    reward -= DISTANCE_SCALE * dist
 
-    if dist < radius * INNER_RADIUS_MULTIPLIER:
-        reward += INNER_RADIUS_BONUS
+    # small bonus when roughly close to goal
+    if dist < CLOSE_RADIUS:
+        reward += CLOSE_BONUS
 
-    # sensor penalties
+    # mild sensor-based penalties (discourage getting too close)
     if max_sensor > WARNING_THRESHOLD:
-        reward -= 5
+        reward += WARNING_PENALTY
     if max_sensor > DANGER_THRESHOLD:
-        reward -= 10
+        reward += DANGER_PENALTY
 
-    return reward, False
+    return reward, False, False

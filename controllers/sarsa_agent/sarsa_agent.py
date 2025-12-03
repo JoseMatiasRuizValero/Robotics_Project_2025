@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 class SARSAAgent:
-    def __init__ (self, stateSize, actionSize, learningRate = 0.1, discountFactor = 0.95, epsilon = 1.0, epsilonMin = 0.1, epsilonDecay = 0.995):
+    def __init__(self, stateSize, actionSize, learningRate=0.1, discountFactor=0.95, epsilon=1.0, epsilonMin=0.1, epsilonDecay=0.995):
         self.stateSize = stateSize
         self.actionSize = actionSize
         self.alpha = learningRate
@@ -20,7 +20,7 @@ class SARSAAgent:
             return random.randrange(self.actionSize)
         return int(np.argmax(self.qTable[state]))
     
-    def update (self, state, action, reward, nextState, nextAction):
+    def update(self, state, action, reward, nextState, nextAction):
         # SARSA update
         if state < 0 or state >= self.stateSize:
             state = max(0, min(self.stateSize - 1, state))
@@ -35,7 +35,7 @@ class SARSAAgent:
         nextQ = float(self.qTable[nextState, nextAction])
         target = reward + self.gamma * nextQ
         error = target - currentQ
-        self.qTable[state, action] = self.qTable[state, action] + self.alpha * error
+        self.qTable[state, action] += self.alpha * error
 
     def endEpisode(self):
         if self.epsilon > self.epsilonMin:
