@@ -1,0 +1,57 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/obstacles/protos/OilBarrel.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/panels/protos/Panel.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation 0.17110317769458686 -0.24202029277453577 -0.9550653802060582 5.008725772017502
+  position -0.14559735265416607 -2.6565438107838704 1.106784994316982
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  translation 0 -0.01 0
+  floorSize 2 2
+}
+Panel {
+  translation 0.26 -0.51 -0.1
+  rotation 0 0 1 3.14159
+  size 0.02 0.5 0.2
+}
+Panel {
+  translation -0.48 0.48 -0.1
+  rotation 0 0 1 -1.5707953071795862
+  name "panel(1)"
+  size 0.02 0.5 0.2
+}
+Panel {
+  translation -0.01 0.75 -0.1
+  rotation 0 0 1 -1.5707953071795862
+  name "panel(2)"
+  size 0.02 0.5 0.2
+}
+OilBarrel {
+  translation 0 -0.24 0.03
+  height 0.1
+  radius 0.1
+}
+E-puck {
+  translation 0 -0.8 0
+  rotation 0 1 0 0
+  controller "Roboticcontroller"
+  supervisor TRUE
+  turretSlot [
+    InertialUnit {
+    }
+    GPS {
+    }
+  ]
+}
