@@ -61,9 +61,9 @@ Now the robot can start training. We use a while loop that works as long as webo
 - *GOAL_POSITION*
 Every iteration of this loop it reads the sensor data (proximity sensors, GPS and distance to the goal), computes the goal direction,  discretizes it (says if its on front, to the left or to the right) and then combines it into a final integer called StateID which we can use for later debugging.
 
-Now the agent chooses an action via the functions described below in _**[Q Learning Agent](https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#q-learning-agent)**_ and then executes it. Then calculates the reward from the _**[calculate_reward](https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#metrics-and-rewards)**_ function described below, updates the previous distance as the current distance and updates the agent accordingly.
+Now the agent chooses an action via the functions described below in _**[Q Learning Agent](https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#q-learning-agent)**_ and then executes it. Then calculates the reward from the _**[calculate_reward](https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#metrics-and-rewards)**_ function described below, updates the previous distance as the current distance and updates the qTable accordingly.
 
-Then it checks for the robot to be done or for the steps to surpass the mas number of steps, if thats the case, we prepare everything to start a new episode, saving the results, resetting the robot and seeing if we are finished training, (seeing if we have reached the max number of episodes), if that is the case, the loop breaks and the program finishes, otherwise, we start a new episode.
+Then it stores the current state for the next step and checks for the robot to be done or for the steps to surpass the mas number of steps, if thats the case, we prepare everything to start a new episode, saving the results, resetting the robot and seeing if we are finished training, (seeing if we have reached the max number of episodes), if that is the case, the loop breaks and the program finishes, otherwise, we start a new episode.
 
 ## Experiments
 Controller for experimenting with the Q Learning Agent
