@@ -1,5 +1,6 @@
 # Robotics_Project_2025
 ## Authors
+
 Jose Matías Ruiz Valero
 
 Hanpei Mo
@@ -9,6 +10,7 @@ Yin-Chu Huang
 Jia-En Lu
 
 ## File hierarchy
+
 ```yaml
 
 Robotics_Project_2025
@@ -41,6 +43,7 @@ Robotics_Project_2025
 ```
 
 ## Robotic Controler
+
 This controller makes the e-puck robot be able to use the QLearningAgent to learn how to navigate towards a goal avoiding obstacles. It has many well defined constants. A short description of the most important:
 - *TIMESTEP:* Simulation time step
 - *MAX_V:* Max e-puck speed
@@ -61,14 +64,21 @@ Now the robot can start training. We use a while loop that works as long as webo
 - *GOAL_POSITION*
 Every iteration of this loop it reads the sensor data (proximity sensors, GPS and distance to the goal), computes the goal direction,  discretizes it (says if its on front, to the left or to the right) and then combines it into a final integer called StateID which we can use for later debugging.
 
-Now the agent chooses an action via the functions described below in _**[Q Learning Agent](https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#q-learning-agent)**_ and then executes it. Then calculates the reward from the _**[calculate_reward](https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#metrics-and-rewards)**_ function described below, updates the previous distance as the current distance and updates the qTable accordingly.
+Now the agent chooses an action via the functions described below in _**[Q Learning Agent][1]**_ and then executes it. Then calculates the reward from the _**[calculate_reward][2]**_ function described below, updates the previous distance as the current distance and updates the qTable accordingly.
+
+[1]: <https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#q-learning-agent> "Q Learning Agent"
+[2]: <https://github.com/JoseMatiasRuizValero/Robotics_Project_2025/blob/main/README.md#metrics-and-rewards> "Metrics and Rewards"
 
 Then it stores the current state for the next step and checks for the robot to be done or for the steps to surpass the mas number of steps, if thats the case, we prepare everything to start a new episode, saving the results, resetting the robot and seeing if we are finished training, (seeing if we have reached the max number of episodes), if that is the case, the loop breaks and the program finishes, otherwise, we start a new episode.
 
 ## Experiments
+
 Controller for experimenting with the Q Learning Agent
+
 ## Pid
+
 ## Q Learning Agent
+
 Implements Q-Learning Algorithm, with its off-policy update, selecting the highest Q-value (greedy) action.
 
 - `__init__:` this method creates the agent with all the initial values
@@ -83,6 +93,7 @@ Implements Q-Learning Algorithm, with its off-policy update, selecting the highe
 - `load:` Loads to the qTable the selected data from the path (npy file).
   
 ## SARSA Agent
+
 Implements SARSA algorithm, with its on-policy update. Its methodology relies within its methods, in this order:
 
 - `__init__:` this method creates the agent with all the initial values.
@@ -98,8 +109,11 @@ Implements SARSA algorithm, with its on-policy update. Its methodology relies wi
 - `load:` Loads to the qTable the selected data from the path (npy).
 
 ## SARSA Experiments
+
 Controller for experimenting with the SARSA Agent
+
 ## Metrics and Rewards
+
 The **metrics.py** file has important functions to analyze the training results. In order:
  - ``calculate_success_rate:`` Takes an episodes array as the parameter and calculates the success rate of all the episodes with the classical definition of probabily
    
@@ -120,6 +134,7 @@ The **rewards.py** file has a lot of Constants used to calculate the reward at e
 - ``calculate_reward:`` Calculates the reward for a given action, giving huge rewards for reaching the goal, penalising a lot the collisions, penalising stopping, giving a reward if the distance to the goal in this step is less than the previous one, giving a penalty the farther away from the goal you are, giving another bonus when very close to the goal and finally giving some mild sensor-based penalties.
 
 ## Worlds
+
 Test worlds
 
 - `Ultron.wbt: The default 2x2 grid with no obstacles`
