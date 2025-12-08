@@ -46,6 +46,15 @@ Robotics_Project_2025
 ## Pid
 ## Q Learning Agent
 ## SARSA Agent
+Implements SARSA algorithm, with its on-policy update. Its methodology relies within its methods, in this order
+
+- `__init__:` this method creates the agent with all the initial values.
+- `choose_action:`
+- `update:`
+- `endEpisode:`
+- `save:` Saves the current qTable data to the path specified.
+- `load:` Loads to the qTable the selected data from the path.
+
 ## SARSA Experiments
 ## Metrics and Rewards
 The **metrics.py** file has important functions to analyze the training results. In order:
