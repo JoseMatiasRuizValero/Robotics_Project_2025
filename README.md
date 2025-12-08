@@ -61,7 +61,6 @@ Then, the controller proceeds to enable all the desired sensors, as well as crea
 
 Now the robot can start training. We use a while loop that works as long as webots dont stop the controller or whenever we break the loop.
 
-- *GOAL_POSITION*
 Every iteration of this loop it reads the sensor data (proximity sensors, GPS and distance to the goal), computes the goal direction,  discretizes it (says if its on front, to the left or to the right) and then combines it into a final integer called StateID which we can use for later debugging.
 
 Now the agent chooses an action via the functions described below in _**[Q Learning Agent][1]**_ and then executes it. Then calculates the reward from the _**[calculate_reward][2]**_ function described below, updates the previous distance as the current distance and updates the qTable accordingly.
