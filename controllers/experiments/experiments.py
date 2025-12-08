@@ -16,23 +16,33 @@ from utils.metrics import print_training_summary, get_recent_performance
 TIMESTEP = 64
 MAX_V = 6.28
 
-# ============= MAP CONFIGURATION =============
-# Change MAP_TYPE to test different environments
-MAP_TYPE = "test1"  # Options: "test1", "test2", "original"
+# motion parameters
+FORWARD_V = 0.5 * MAX_V       # normal forward speed
+SLOW_FORWARD_V = 0.3 * MAX_V  # slow forward speed
+TURN_V = 0.15 * MAX_V         # angular velocity for turning
+
+# Emergency stop threshold (slightly lower than COLLISION_SENSOR_THRESHOLD to brake earlier)
+EMERGENCY_SENSOR_THRESHOLD = 480.0
+
+# Action repeat count (frame skipping)
+ACTION_REPEAT = 4
+
+# map config
+MAP_TYPE = "test1"  # "test1", "test2", "original"
 
 if MAP_TYPE == "test1":
     # Test1: 2x2 map with 3 barrels + 3 panels
-    GOAL_POSITION = (0.8, -0.3)
+    GOAL_POSITION = (0.4, 0.1)
     START_POSITION = (0.0, -0.8)
     FALLBACK_POSITION = (0.0, -0.6)
     print("Map: test1 (2x2 with obstacles)")
     
 elif MAP_TYPE == "test2":
-    # Test2: 2x2 maze with panels
-    GOAL_POSITION = (0.6, 0.6)
-    START_POSITION = (0.0, -0.8)
-    FALLBACK_POSITION = (0.0, -0.6)
-    print("Map: test2 (2x2 maze)")
+    # Test2: 1x2 maze with panels
+    GOAL_POSITION = (-0.4, -0.1)
+    START_POSITION = (-0.2, 0.942588)
+    FALLBACK_POSITION = (-0.2, 0.8)
+    print("Map: test2 (1x2 maze)")
     
 else:  # original (Ultron.wbt)
     # Original: 2x2 open map
@@ -42,12 +52,11 @@ else:  # original (Ultron.wbt)
     print("Map: original (2x2 open)")
 
 # Common settings for all maps
-START_Y = 0.0
+START_Z = 0.0  # Z is height
 START_ROTATION = [0, 1, 0, 0]
 MAP_BOUNDARY_X = 0.95
-MAP_BOUNDARY_Z = 0.95
+MAP_BOUNDARY_Y = 0.95
 SUCCESS_RADIUS = 0.4
-# =============================================
 
 # sensor groups from Hanpei's code
 PS_GROUP_FRONT = [0, 7]
@@ -58,13 +67,18 @@ SENSOR_THRESHOLDS = [100.0, 500.0]
 # training params
 NUM_EPISODES = 1000
 MAX_STEPS = 1000
-STATE_SIZE = 81
+# State size: L*3 x F*3 x R*3 x G*5 = 135
+STATE_SIZE = 135
 ACTION_SIZE = 4
 LEARNING_RATE = 0.2
 DISCOUNT_FACTOR = 0.90
 EPSILON = 1.0
 EPSILON_MIN = 0.03
 EPSILON_DECAY = 0.99
+
+# Angle thresholds for 5-level direction state
+ANGLE_THRESHOLD_CENTER = 0.26  # approx 15 degrees
+ANGLE_THRESHOLD_SIDE = 1.57    # approx 90 degrees
 
 def run_training():
     robot = Supervisor()
@@ -90,7 +104,8 @@ def run_training():
     # create agent
     agent = QLearningAgent(STATE_SIZE, ACTION_SIZE, learningRate = LEARNING_RATE, discountFactor = DISCOUNT_FACTOR, epsilon= EPSILON, epsilonMin= EPSILON_MIN, epsilonDecay=EPSILON_DECAY)
 
-    print(f"Starting training: {NUM_EPISODES} episodes")
+    print(f"Starting Q-Learning training: {NUM_EPISODES} episodes")
+    print(f"Hyperparameters: LR={LEARNING_RATE}, γ={DISCOUNT_FACTOR}, ε_min={EPSILON_MIN}, decay={EPSILON_DECAY}")
 
     # create unique csv path for this run
     project_root = os.path.join(os.path.dirname(__file__), '../..')
@@ -114,9 +129,9 @@ def run_training():
         robot.step(TIMESTEP)
         
         # reset robot position
-        start_x, start_z = START_POSITION
+        start_x, start_y = START_POSITION
         robot_node.resetPhysics()
-        tField.setSFVec3f([start_x, start_z, START_Y])
+        tField.setSFVec3f([start_x, start_y, START_Z])
         rField.setSFRotation(START_ROTATION)
         
         # wait for sensors
@@ -145,14 +160,14 @@ def run_training():
         if max_sensor_value > 500:
             # try fallback position
             robot_node.resetPhysics()
-            tField.setSFVec3f([FALLBACK_POSITION[0], FALLBACK_POSITION[1], START_Y])
+            tField.setSFVec3f([FALLBACK_POSITION[0], FALLBACK_POSITION[1], START_Z])
             rField.setSFRotation(START_ROTATION)
             for _ in range(30):
                 robot.step(TIMESTEP)
             
             # verify GPS updated
-            gps_x, _, gps_z = gps.getValues()
-            if abs(gps_x - FALLBACK_POSITION[0]) > 0.1 or abs(gps_z - FALLBACK_POSITION[1]) > 0.1:
+            gps_x, gps_y, _ = gps.getValues()
+            if abs(gps_x - FALLBACK_POSITION[0]) > 0.1 or abs(gps_y - FALLBACK_POSITION[1]) > 0.1:
                 for _ in range(20):
                     robot.step(TIMESTEP)
             
@@ -177,12 +192,12 @@ def run_training():
                 continue
             else:
                 # successfully moved to fallback position
-                start_x, start_z = FALLBACK_POSITION
+                start_x, start_y = FALLBACK_POSITION
                 print(f"Info: Episode {episode+1} - Moved robot to fallback position (sensor={max([val_left, val_front, val_right]):.1f})")
 
         # get starting position for distance calculation
-        x, _, z = gps.getValues()
-        prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+        x, y, _ = gps.getValues()
+        prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (y - GOAL_POSITION[1])**2)
 
         dist_to_goal = prev_dist
         min_dist = prev_dist
@@ -190,10 +205,10 @@ def run_training():
         for step in range(MAX_STEPS):
             # get sensor values
             ps_values = [s.getValue() for s in ps]
-            x, _, z = gps.getValues()
+            x, y, _ = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
 
-            # discretize sensors (copied from Hanpei)
+            # discretize sensors (3 levels)
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
             val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
@@ -202,23 +217,27 @@ def run_training():
             state_L = 0 if val_left < 100 else (1 if val_left < 500 else 2)
             state_R = 0 if val_right < 100 else (1 if val_right < 500 else 2)
 
-            # goal direction
-            target_angle = math.atan2(GOAL_POSITION[1] - z, GOAL_POSITION[0] - x)
+            # goal direction (5 levels)
+            target_angle = math.atan2(GOAL_POSITION[1] - y, GOAL_POSITION[0] - x)
             relative_angle = target_angle - yaw
             if relative_angle > math.pi:
                 relative_angle -= 2 * math.pi
             if relative_angle <= -math.pi:
                 relative_angle += 2 * math.pi
 
-            if abs(relative_angle) < (math.pi / 3):
-                state_G = 0
-            elif relative_angle < 0:
-                state_G = 1
+            if abs(relative_angle) < ANGLE_THRESHOLD_CENTER:
+                state_G = 0  # facing target
+            elif -ANGLE_THRESHOLD_SIDE < relative_angle <= -ANGLE_THRESHOLD_CENTER:
+                state_G = 1  # target front-left
+            elif relative_angle <= -ANGLE_THRESHOLD_SIDE:
+                state_G = 2  # target back-left
+            elif ANGLE_THRESHOLD_CENTER <= relative_angle < ANGLE_THRESHOLD_SIDE:
+                state_G = 3  # target front-right
             else:
-                state_G = 2
+                state_G = 4  # target back-right
 
-            # calculate state ID
-            state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            # calculate state ID (L*45 + F*15 + R*5 + G)
+            state = (state_L * 45) + (state_F * 15) + (state_R * 5) + state_G
             
             # ensure state is within valid range
             if state < 0 or state >= STATE_SIZE:
@@ -228,29 +247,55 @@ def run_training():
             # choose action
             action = agent.chooseAction(state)
 
-            # execute action
-            # Note: action is 0,1,2,3 (stop, forward, left, right)
-            if action == 1:  # forward
-                lw.setVelocity(0.5 * MAX_V)
-                rw.setVelocity(0.5 * MAX_V)
-            elif action == 2:  # left
-                lw.setVelocity(-0.15 * MAX_V)
-                rw.setVelocity(0.15 * MAX_V)
-            elif action == 3:  # right
-                lw.setVelocity(0.15 * MAX_V)
-                rw.setVelocity(-0.15 * MAX_V)
-            else:  # stop (action == 0)
-                lw.setVelocity(0.0)
-                rw.setVelocity(0.0)
+            # safety check
+            emergency_stop = val_front > EMERGENCY_SENSOR_THRESHOLD
 
-            robot.step(TIMESTEP)
+            # action repeat
+            for _ in range(ACTION_REPEAT):
+                if emergency_stop:
+                    # force stop
+                    lw.setVelocity(0.0)
+                    rw.setVelocity(0.0)
+                else:
+                    # execute action: 0=slow forward, 1=fast forward, 2=left, 3=right
+                    if action == 1:  # fast forward
+                        lw.setVelocity(FORWARD_V)
+                        rw.setVelocity(FORWARD_V)
+                    elif action == 0:  # slow forward
+                        lw.setVelocity(SLOW_FORWARD_V)
+                        rw.setVelocity(SLOW_FORWARD_V)
+                    elif action == 2:  # left
+                        lw.setVelocity(-TURN_V)
+                        rw.setVelocity(TURN_V)
+                    elif action == 3:  # right
+                        lw.setVelocity(TURN_V)
+                        rw.setVelocity(-TURN_V)
+                    else:
+                        lw.setVelocity(0.0)
+                        rw.setVelocity(0.0)
+                
+                if robot.step(TIMESTEP) == -1:
+                    break
 
             # get next state
             ps_values = [s.getValue() for s in ps]
-            x, _, z = gps.getValues()
+            x, y, _ = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
 
-            # recalculate state (same as above)
+            # check for GPS anomaly
+            if math.isnan(x) or math.isnan(y) or abs(x) > 10 or abs(y) > 10:
+                print(f"Warning: Episode {episode+1} Step {step+1} - GPS anomaly ({x}, {y}), ending episode")
+                break
+
+            # check map boundaries
+            if abs(x) > MAP_BOUNDARY_X or abs(y) > MAP_BOUNDARY_Y:
+                print(f"Warning: Episode {episode+1} Step {step+1} - Robot out of bounds ({x:.2f}, {y:.2f})")
+                reward = COLLISION_PENALTY
+                total_reward += reward
+                collisions += 1
+                break
+
+            # recalculate state
             val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
             val_left = max(ps_values[i] for i in PS_GROUP_LEFT)
             val_right = max(ps_values[i] for i in PS_GROUP_RIGHT)
@@ -259,38 +304,45 @@ def run_training():
             state_L = 0 if val_left < 100 else (1 if val_left < 500 else 2)
             state_R = 0 if val_right < 100 else (1 if val_right < 500 else 2)
 
-            target_angle = math.atan2(GOAL_POSITION[1] - z, GOAL_POSITION[0] - x)
+            target_angle = math.atan2(GOAL_POSITION[1] - y, GOAL_POSITION[0] - x)
             relative_angle = target_angle - yaw
             if relative_angle > math.pi:
                 relative_angle -= 2 * math.pi
             if relative_angle <= -math.pi:
                 relative_angle += 2 * math.pi
 
-            if abs(relative_angle) < (math.pi / 3):
+            if abs(relative_angle) < ANGLE_THRESHOLD_CENTER:
                 state_G = 0
-            elif relative_angle < 0:
+            elif -ANGLE_THRESHOLD_SIDE < relative_angle <= -ANGLE_THRESHOLD_CENTER:
                 state_G = 1
-            else:
+            elif relative_angle <= -ANGLE_THRESHOLD_SIDE:
                 state_G = 2
+            elif ANGLE_THRESHOLD_CENTER <= relative_angle < ANGLE_THRESHOLD_SIDE:
+                state_G = 3
+            else:
+                state_G = 4
 
-            next_state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            next_state = (state_L * 45) + (state_F * 15) + (state_R * 5) + state_G
             
             # ensure next_state is within valid range
             if next_state < 0 or next_state >= STATE_SIZE:
                 print(f"Warning: Invalid next_state {next_state}, clamping to valid range")
                 next_state = max(0, min(STATE_SIZE - 1, next_state))
 
-            # get reward
-            robot_pos = (x, z)
+            # get reward (with alignment_angle for heading reward)
+            robot_pos = (x, y)
             sensor_values = [val_left, val_front, val_right]
-            reward, done, collided = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist)
+            reward, done, collided = calculate_reward(
+                robot_pos, GOAL_POSITION, sensor_values, action, prev_dist,
+                success_radius=SUCCESS_RADIUS, alignment_angle=relative_angle
+            )
 
             # track collisions
             if collided:
                 collisions += 1
 
             # calculate distance to goal
-            dist_to_goal = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+            dist_to_goal = math.sqrt((x - GOAL_POSITION[0])**2 + (y - GOAL_POSITION[1])**2)
 
             # update prev_dist for next step
             prev_dist = dist_to_goal
@@ -299,7 +351,7 @@ def run_training():
             if done and not collided:
                 success = True
 
-            # update
+            # Q-Learning update
             agent.update(state, action, reward, next_state)
 
             total_reward += reward
@@ -334,6 +386,11 @@ def run_training():
                 writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])
                 writer.writeheader()
                 writer.writerows(episode_data)
+        
+        # save Q-table every 100 episodes
+        if (episode + 1) % 100 == 0:
+            agent.save(os.path.join(results_dir, 'q_table.npy'))
+            print(f"  Q-table saved at episode {episode + 1}")
 
     # save final results
     project_root = os.path.join(os.path.dirname(__file__), '../..')

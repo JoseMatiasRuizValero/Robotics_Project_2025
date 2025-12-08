@@ -12,7 +12,7 @@ class SARSAAgent:
         self.epsilonDecay = epsilonDecay
         self.qTable = np.zeros((stateSize, actionSize))
 
-    def chooseAction(self, state: int)->int:
+    def chooseAction(self, state):
         # epsilon greedy
         if state < 0 or state >= self.stateSize:
             state = max(0, min(self.stateSize - 1, state))
@@ -41,9 +41,9 @@ class SARSAAgent:
         if self.epsilon > self.epsilonMin:
             self.epsilon *= self.epsilonDecay
 
-    def save(self, path: str):
+    def save(self, path):
         np.save(path, self.qTable)
 
-    def load(self, path: str):
+    def load(self, path):
         self.qTable = np.load(path)
 
