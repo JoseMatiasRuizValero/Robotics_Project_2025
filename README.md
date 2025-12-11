@@ -74,8 +74,6 @@ Then it stores the current state for the next step and checks for the robot to b
 
 Controller for experimenting with the Q Learning Agent
 
-## Pid
-
 ## Q Learning Agent
 
 Implements Q-Learning Algorithm, with its off-policy update, selecting the highest Q-value (greedy) action.
