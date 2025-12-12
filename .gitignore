@@ -64,3 +64,13 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Allow figures folder images
+!figures/
+!figures/**/*.png
+!figures/**/*.jpg
+!figures/**/*.svg
+
+# Allow renamed CSV files in results folder
+!results/qlearning_*.csv
+!results/sarsa_*.csv
