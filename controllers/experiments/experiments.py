@@ -28,7 +28,7 @@ EMERGENCY_SENSOR_THRESHOLD = 480.0
 ACTION_REPEAT = 4
 
 # map config
-MAP_TYPE = "test1"  # "test1", "test2", "original"
+MAP_TYPE = "original"  # "test1", "test2", "original"
 
 if MAP_TYPE == "test1":
     # Test1: 2x2 map with 3 barrels + 3 panels
@@ -113,6 +113,10 @@ def run_training():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = os.path.join(results_dir, f"results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
+    
+    # Q-table path with map type
+    q_table_path = os.path.join(results_dir, f'q_table_{MAP_TYPE}.npy')
+    print(f"Q-table will be saved to: {q_table_path}")
     
     # get robot node for position reset
     robot_node = robot.getSelf()
@@ -389,13 +393,11 @@ def run_training():
         
         # save Q-table every 100 episodes
         if (episode + 1) % 100 == 0:
-            agent.save(os.path.join(results_dir, 'q_table.npy'))
+            agent.save(q_table_path)
             print(f"  Q-table saved at episode {episode + 1}")
 
     # save final results
-    project_root = os.path.join(os.path.dirname(__file__), '../..')
-    results_dir = os.path.join(project_root, 'results')
-    agent.save(os.path.join(results_dir, 'q_table.npy'))
+    agent.save(q_table_path)
     print_training_summary(episode_data)
 
 if __name__ == "__main__":

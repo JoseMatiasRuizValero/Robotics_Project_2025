@@ -28,7 +28,7 @@ EMERGENCY_SENSOR_THRESHOLD = 480.0
 ACTION_REPEAT = 4
 
 # map config
-MAP_TYPE = "test1"  # "test1", "test2", "original"
+MAP_TYPE = "original"  # "test1", "test2", "original"
 
 if MAP_TYPE == "test1":
     # Test1: 2x2 map with 3 barrels + 3 panels
@@ -81,7 +81,7 @@ ANGLE_THRESHOLD_SIDE = 1.57    # approx 90 degrees
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
-QTABLE_PATH = os.path.join(RESULTS_DIR, 'sarsa_q_table.npy')
+QTABLE_PATH = os.path.join(RESULTS_DIR, f'sarsa_q_table_{MAP_TYPE}.npy')
 
 def run_sarsa_training():
     robot = Supervisor()
@@ -113,6 +113,7 @@ def run_sarsa_training():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = os.path.join(RESULTS_DIR, f"sarsa_results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
+    print(f"Q-table will be saved to: {QTABLE_PATH}")
 
     robot_node = robot.getSelf()
     tField = robot_node.getField('translation')
