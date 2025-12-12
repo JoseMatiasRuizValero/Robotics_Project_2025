@@ -9,8 +9,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation 0.34918314825728103 0.7774017639076359 -0.5231803001322105 1.4188485764571213
-  position -0.2832800871711537 1.0373389054861029 2.012892073855276
+  orientation 0.4562618700136452 0.4638410482595818 -0.759392249052559 1.826714676476042
+  position 0.061206720610766874 4.56249311427303 8.741654238141322
 }
 TexturedBackground {
 }
@@ -18,7 +18,7 @@ TexturedBackgroundLight {
 }
 RectangleArena {
   translation 0 -0.01 0
-  floorSize 1 2
+  floorSize 2 2
 }
 Panel {
   translation -0.24 0.44 -0.1
@@ -38,7 +38,7 @@ Panel {
   size 0.02 0.5 0.2
 }
 Panel {
-  translation -0.509999 0.09 -0.1
+  translation -0.4 0.09 -0.1
   rotation 0 0 1 -1.5707953071795862
   name "panel(4)"
   size 0.02 0.5 0.2
@@ -98,21 +98,25 @@ Panel {
   size 0.02 0.5 0.2
 }
 Panel {
-  translation -0.51 0.73 -0.1
+  translation -0.01 0.73 -0.1
   rotation 0 0 1 -1.5707953071795862
   name "panel(5)"
   size 0.02 0.5 0.2
 }
 Panel {
-  translation -0.25 0.73 -0.1
+  translation -0.19 0.73 -0.1
   rotation 0 0 1 -1.5707953071795862
   name "panel(6)"
   size 0.02 0.5 0.2
 }
 E-puck {
-  translation 0.420341 0.942588 0
-  rotation 0 0 1 3.14158
-  controller "Roboticcontroller"
+  hidden position_0_0 2935.2111268931994
+  hidden position_0_1 2748.934884998224
+  hidden rotation_1 0 -0.9999999999999999 0 5.319596866847037
+  hidden rotation_2 0 -1 0 3.100279546434998
+  translation -0.2352 0.836402 -6.42199e-05
+  rotation -0.0005014659876422808 -0.0003292162024107829 -0.9999998200742616 1.952581665154953
+  controller "experiments"
   supervisor TRUE
   turretSlot [
     InertialUnit {

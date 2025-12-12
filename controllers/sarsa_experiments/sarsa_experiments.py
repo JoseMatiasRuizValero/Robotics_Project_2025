@@ -16,23 +16,33 @@ from utils.metrics import print_training_summary, get_recent_performance
 TIMESTEP = 64
 MAX_V = 6.28
 
-# ============= MAP CONFIGURATION =============
-# Change MAP_TYPE to test different environments
-MAP_TYPE = "test1"  # Options: "test1", "test2", "original"
+# motion parameters
+FORWARD_V = 0.5 * MAX_V       # normal forward speed
+SLOW_FORWARD_V = 0.3 * MAX_V  # slow forward speed
+TURN_V = 0.15 * MAX_V         # angular velocity for turning
+
+# Emergency stop threshold (slightly lower than COLLISION_SENSOR_THRESHOLD to brake earlier)
+EMERGENCY_SENSOR_THRESHOLD = 480.0
+
+# Action repeat count (frame skipping)
+ACTION_REPEAT = 4
+
+# map config
+MAP_TYPE = "original"  # "test1", "test2", "original"
 
 if MAP_TYPE == "test1":
     # Test1: 2x2 map with 3 barrels + 3 panels
-    GOAL_POSITION = (0.8, -0.3)
+    GOAL_POSITION = (0.4, 0.1)
     START_POSITION = (0.0, -0.8)
     FALLBACK_POSITION = (0.0, -0.6)
     print("Map: test1 (2x2 with obstacles)")
     
 elif MAP_TYPE == "test2":
-    # Test2: 2x2 maze with panels
-    GOAL_POSITION = (0.6, 0.6)
-    START_POSITION = (0.0, -0.8)
-    FALLBACK_POSITION = (0.0, -0.6)
-    print("Map: test2 (2x2 maze)")
+    # Test2: 1x2 maze with panels
+    GOAL_POSITION = (-0.4, -0.1)
+    START_POSITION = (-0.2, 0.942588)
+    FALLBACK_POSITION = (-0.2, 0.8)
+    print("Map: test2 (1x2 maze)")
     
 else:  # original (Ultron.wbt)
     # Original: 2x2 open map
@@ -42,12 +52,11 @@ else:  # original (Ultron.wbt)
     print("Map: original (2x2 open)")
 
 # Common settings for all maps
-START_Y = 0.0
+START_Z = 0.0  # Z is height
 START_ROTATION = [0, 1, 0, 0]
 MAP_BOUNDARY_X = 0.95
-MAP_BOUNDARY_Z = 0.95
+MAP_BOUNDARY_Y = 0.95
 SUCCESS_RADIUS = 0.4
-# =============================================
 
 PS_GROUP_FRONT = [0, 7]
 PS_GROUP_LEFT = [5, 6]
@@ -57,16 +66,22 @@ SENSOR_THRESHOLDS = [100.0, 500.0]
 # training params
 NUM_EPISODES = 1000
 MAX_STEPS = 1000
-STATE_SIZE = 81
+# State size: L*3 x F*3 x R*3 x G*5 = 135
+STATE_SIZE = 135
 ACTION_SIZE = 4
+LEARNING_RATE = 0.2
+DISCOUNT_FACTOR = 0.90
+EPSILON = 1.0
+EPSILON_MIN = 0.03
+EPSILON_DECAY = 0.99
+
+# Angle thresholds for 5-level direction state
+ANGLE_THRESHOLD_CENTER = 0.26  # approx 15 degrees
+ANGLE_THRESHOLD_SIDE = 1.57    # approx 90 degrees
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-
-LOAD_EXISTING_QTABLE = True
 RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
-QTABLE_PATH = os.path.join(RESULTS_DIR, 'sarsa_q_table.npy')
-WARMUP_EPISODES = 100
-WARMUP_MIN_EPSILON = 0.8
+QTABLE_PATH = os.path.join(RESULTS_DIR, f'sarsa_q_table_{MAP_TYPE}.npy')
 
 def run_sarsa_training():
     robot = Supervisor()
@@ -88,20 +103,17 @@ def run_sarsa_training():
     lw.setVelocity(0.0)
     rw.setVelocity(0.0)
 
-    agent = SARSAAgent(STATE_SIZE, ACTION_SIZE)
-
-    if LOAD_EXISTING_QTABLE and os.path.exists(QTABLE_PATH):
-        try:
-            agent.load(QTABLE_PATH)
-            print(f"Loaded existing SARSA Q-table from {QTABLE_PATH}")
-        except Exception as exc:
-            print(f"Warning: failed to load SARSA Q-table ({exc}), starting fresh")
+    agent = SARSAAgent(STATE_SIZE, ACTION_SIZE, learningRate=LEARNING_RATE, 
+                       discountFactor=DISCOUNT_FACTOR, epsilon=EPSILON, 
+                       epsilonMin=EPSILON_MIN, epsilonDecay=EPSILON_DECAY)
 
     print(f"Starting SARSA training: {NUM_EPISODES} episodes")
+    print(f"Hyperparameters: LR={LEARNING_RATE}, γ={DISCOUNT_FACTOR}, ε_min={EPSILON_MIN}, decay={EPSILON_DECAY}")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = os.path.join(RESULTS_DIR, f"sarsa_results_{timestamp}.csv")
     print(f"Saving results to: {csv_path}")
+    print(f"Q-table will be saved to: {QTABLE_PATH}")
 
     robot_node = robot.getSelf()
     tField = robot_node.getField('translation')
@@ -115,9 +127,9 @@ def run_sarsa_training():
         rw.setVelocity(0.0)
         robot.step(TIMESTEP)
         
-        start_x, start_z = START_POSITION
+        start_x, start_y = START_POSITION
         robot_node.resetPhysics()
-        tField.setSFVec3f([start_x, start_z, START_Y])
+        tField.setSFVec3f([start_x, start_y, START_Z])
         rField.setSFRotation(START_ROTATION)
         
         for _ in range(30):
@@ -144,15 +156,15 @@ def run_sarsa_training():
         # try fallback position if collision
         if max_sensor_value > 500:
             robot_node.resetPhysics()
-            tField.setSFVec3f([FALLBACK_POSITION[0], FALLBACK_POSITION[1], START_Y])
+            tField.setSFVec3f([FALLBACK_POSITION[0], FALLBACK_POSITION[1], START_Z])
             rField.setSFRotation(START_ROTATION)
             lw.setVelocity(0.0)
             rw.setVelocity(0.0)
             for _ in range(30):
                 robot.step(TIMESTEP)
             
-            gps_x, _, gps_z = gps.getValues()
-            if abs(gps_x - FALLBACK_POSITION[0]) > 0.1 or abs(gps_z - FALLBACK_POSITION[1]) > 0.1:
+            gps_x, gps_y, _ = gps.getValues()
+            if abs(gps_x - FALLBACK_POSITION[0]) > 0.1 or abs(gps_y - FALLBACK_POSITION[1]) > 0.1:
                 for _ in range(20):
                     robot.step(TIMESTEP)
             
@@ -174,21 +186,18 @@ def run_sarsa_training():
                     'collisions': 1,
                     'epsilon': agent.epsilon
                 })
-                if episode < WARMUP_EPISODES:
-                    agent.epsilon = max(agent.epsilon, WARMUP_MIN_EPSILON)
-                else:
-                    agent.endEpisode()
+                agent.endEpisode()
                 continue
             else:
-                start_x, start_z = FALLBACK_POSITION
+                start_x, start_y = FALLBACK_POSITION
                 print(f"Info: SARSA Episode {episode+1} - Moved robot to fallback position (sensor={max([val_left, val_front, val_right]):.1f})")
 
         # get starting position
-        x, _, z = gps.getValues()
-        prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+        x, y, _ = gps.getValues()
+        prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (y - GOAL_POSITION[1])**2)
 
         ps_values = [s.getValue() for s in ps]
-        x, _, z = gps.getValues()
+        x, y, _ = gps.getValues()
         yaw = imu.getRollPitchYaw()[2]
 
         val_front = max(ps_values[i] for i in PS_GROUP_FRONT)
@@ -199,21 +208,27 @@ def run_sarsa_training():
         state_L = 0 if val_left < 100 else (1 if val_left < 500 else 2)
         state_R = 0 if val_right < 100 else (1 if val_right < 500 else 2)
 
-        target_angle = math.atan2(GOAL_POSITION[1] - z, GOAL_POSITION[0] - x)
+        # goal direction (5 levels)
+        target_angle = math.atan2(GOAL_POSITION[1] - y, GOAL_POSITION[0] - x)
         relative_angle = target_angle - yaw
         if relative_angle > math.pi:
             relative_angle -= 2 * math.pi
         if relative_angle <= -math.pi:
             relative_angle += 2 * math.pi
 
-        if abs(relative_angle) < (math.pi / 3):
-            state_G = 0
-        elif relative_angle < 0:
-            state_G = 1
+        if abs(relative_angle) < ANGLE_THRESHOLD_CENTER:
+            state_G = 0  # facing target
+        elif -ANGLE_THRESHOLD_SIDE < relative_angle <= -ANGLE_THRESHOLD_CENTER:
+            state_G = 1  # target front-left
+        elif relative_angle <= -ANGLE_THRESHOLD_SIDE:
+            state_G = 2  # target back-left
+        elif ANGLE_THRESHOLD_CENTER <= relative_angle < ANGLE_THRESHOLD_SIDE:
+            state_G = 3  # target front-right
         else:
-            state_G = 2
+            state_G = 4  # target back-right
 
-        state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+        # calculate state ID (L*45 + F*15 + R*5 + G)
+        state = (state_L * 45) + (state_F * 15) + (state_R * 5) + state_G
         
         if state < 0 or state >= STATE_SIZE:
             print(f"Warning: Invalid state {state}, clamping to valid range")
@@ -223,35 +238,49 @@ def run_sarsa_training():
         action = agent.chooseAction(state)
 
         for step in range(MAX_STEPS):
-            # execute action (0=stop, 1=forward, 2=left, 3=right)
-            if action == 1:
-                lw.setVelocity(0.5 * MAX_V)
-                rw.setVelocity(0.5 * MAX_V)
-            elif action == 2:
-                lw.setVelocity(-0.08 * MAX_V)
-                rw.setVelocity(0.08 * MAX_V)
-            elif action == 3:
-                lw.setVelocity(0.08 * MAX_V)
-                rw.setVelocity(-0.08 * MAX_V)
-            else:
-                lw.setVelocity(0.0)
-                rw.setVelocity(0.0)
+            # safety check
+            emergency_stop = val_front > EMERGENCY_SENSOR_THRESHOLD
 
-            robot.step(TIMESTEP)
+            # action repeat
+            for _ in range(ACTION_REPEAT):
+                if emergency_stop:
+                    # force stop
+                    lw.setVelocity(0.0)
+                    rw.setVelocity(0.0)
+                else:
+                    # execute action: 0=slow forward, 1=fast forward, 2=left, 3=right
+                    if action == 1:  # fast forward
+                        lw.setVelocity(FORWARD_V)
+                        rw.setVelocity(FORWARD_V)
+                    elif action == 0:  # slow forward
+                        lw.setVelocity(SLOW_FORWARD_V)
+                        rw.setVelocity(SLOW_FORWARD_V)
+                    elif action == 2:  # left
+                        lw.setVelocity(-TURN_V)
+                        rw.setVelocity(TURN_V)
+                    elif action == 3:  # right
+                        lw.setVelocity(TURN_V)
+                        rw.setVelocity(-TURN_V)
+                    else:
+                        lw.setVelocity(0.0)
+                        rw.setVelocity(0.0)
+                
+                if robot.step(TIMESTEP) == -1:
+                    break
 
             # get sensor and position data
             ps_values = [s.getValue() for s in ps]
-            x, y, z = gps.getValues()
+            x, y, _ = gps.getValues()
             yaw = imu.getRollPitchYaw()[2]
             
             # check for GPS anomaly
-            if math.isnan(x) or math.isnan(z) or abs(x) > 10 or abs(z) > 10:
-                print(f"Warning: SARSA Episode {episode+1} Step {step+1} - GPS anomaly detected ({x}, {z}), ending episode")
+            if math.isnan(x) or math.isnan(y) or abs(x) > 10 or abs(y) > 10:
+                print(f"Warning: SARSA Episode {episode+1} Step {step+1} - GPS anomaly detected ({x}, {y}), ending episode")
                 break
             
             # check boundaries
-            if abs(x) > MAP_BOUNDARY_X or abs(z) > MAP_BOUNDARY_Z:
-                print(f"Warning: SARSA Episode {episode+1} Step {step+1} - Robot out of bounds ({x:.2f}, {z:.2f}), ending episode")
+            if abs(x) > MAP_BOUNDARY_X or abs(y) > MAP_BOUNDARY_Y:
+                print(f"Warning: SARSA Episode {episode+1} Step {step+1} - Robot out of bounds ({x:.2f}, {y:.2f}), ending episode")
                 reward = COLLISION_PENALTY
                 total_reward += reward
                 collisions += 1
@@ -265,36 +294,45 @@ def run_sarsa_training():
             state_L = 0 if val_left < 100 else (1 if val_left < 500 else 2)
             state_R = 0 if val_right < 100 else (1 if val_right < 500 else 2)
 
-            target_angle = math.atan2(GOAL_POSITION[1] - z, GOAL_POSITION[0] - x)
+            # goal direction (5 levels)
+            target_angle = math.atan2(GOAL_POSITION[1] - y, GOAL_POSITION[0] - x)
             relative_angle = target_angle - yaw
             if relative_angle > math.pi:
                 relative_angle -= 2 * math.pi
             if relative_angle <= -math.pi:
                 relative_angle += 2 * math.pi
 
-            if abs(relative_angle) < (math.pi / 3):
-                state_G = 0
-            elif relative_angle < 0:
-                state_G = 1
+            if abs(relative_angle) < ANGLE_THRESHOLD_CENTER:
+                state_G = 0  # facing target
+            elif -ANGLE_THRESHOLD_SIDE < relative_angle <= -ANGLE_THRESHOLD_CENTER:
+                state_G = 1  # target front-left
+            elif relative_angle <= -ANGLE_THRESHOLD_SIDE:
+                state_G = 2  # target back-left
+            elif ANGLE_THRESHOLD_CENTER <= relative_angle < ANGLE_THRESHOLD_SIDE:
+                state_G = 3  # target front-right
             else:
-                state_G = 2
+                state_G = 4  # target back-right
 
-            next_state = (state_L * 27) + (state_F * 9) + (state_R * 3) + state_G
+            # calculate state ID (L*45 + F*15 + R*5 + G)
+            next_state = (state_L * 45) + (state_F * 15) + (state_R * 5) + state_G
             
             if next_state < 0 or next_state >= STATE_SIZE:
                 print(f"Warning: Invalid next_state {next_state}, clamping to valid range")
                 next_state = max(0, min(STATE_SIZE - 1, next_state))
 
-            # calculate reward
-            robot_pos = (x, z)
+            # calculate reward (with alignment_angle for heading reward)
+            robot_pos = (x, y)
             sensor_values = [val_left, val_front, val_right]
-            reward, done, collided = calculate_reward(robot_pos, GOAL_POSITION, sensor_values, action, prev_dist, success_radius=SUCCESS_RADIUS)
+            reward, done, collided = calculate_reward(
+                robot_pos, GOAL_POSITION, sensor_values, action, prev_dist,
+                success_radius=SUCCESS_RADIUS, alignment_angle=relative_angle
+            )
 
             # track collisions
             if collided:
                 collisions += 1
 
-            prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (z - GOAL_POSITION[1])**2)
+            prev_dist = math.sqrt((x - GOAL_POSITION[0])**2 + (y - GOAL_POSITION[1])**2)
 
             # check success based on reward function result
             if done and not collided:
@@ -316,10 +354,7 @@ def run_sarsa_training():
             state = next_state
             action = next_action
 
-        if episode < WARMUP_EPISODES:
-            agent.epsilon = max(agent.epsilon, WARMUP_MIN_EPSILON)
-        else:
-            agent.endEpisode()
+        agent.endEpisode()
 
         episode_data.append({
             'episode': episode + 1,
@@ -337,7 +372,14 @@ def run_sarsa_training():
         if (episode + 1) % 10 == 0:
             recent = get_recent_performance(episode_data, 10)
             print(f"  Last 10: {recent['success_rate']*100:.1f}% success, {recent['avg_steps']:.1f} avg steps")
-            # save to CSV
+        
+        # save Q-table every 100 episodes
+        if (episode + 1) % 100 == 0:
+            agent.save(QTABLE_PATH)
+            print(f"  Q-table saved at episode {episode + 1}")
+        
+        # save to CSV every 10 episodes
+        if (episode + 1) % 10 == 0:
             try:
                 with open(csv_path, 'w', newline='') as f:
                     writer = csv.DictWriter(f, fieldnames=['episode', 'steps', 'total_reward', 'success', 'collisions', 'epsilon'])

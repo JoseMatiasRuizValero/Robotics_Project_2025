@@ -17,6 +17,9 @@ WARNING_PENALTY = -3.0
 DANGER_THRESHOLD = 450.0
 DANGER_PENALTY = -6.0
 
+# heading reward weight
+HEADING_REWARD_SCALE = 2.0
+
 
 def get_distance(pos1, pos2):
     return math.sqrt((pos1[0]-pos2[0])**2 + (pos1[1]-pos2[1])**2)
@@ -28,23 +31,18 @@ def calculate_reward(
     sensors,
     action,
     prev_distance=None,
-    success_radius=None
+    success_radius=None,
+    alignment_angle=None  # robot's relative angle toward the goal
 ):
-    """
-    Returns:
-        reward (float)
-        done (bool)
-        collided (bool)
-    """
     radius = success_radius if success_radius is not None else DEFAULT_SUCCESS_RADIUS
     dist = get_distance(robot_pos, goal_pos)
     max_sensor = max(sensors)
 
-    # --- Success ---
+    # success
     if dist < radius:
         return 300.0, True, False
 
-    # --- Collision ---
+    # collision
     if max_sensor > COLLISION_SENSOR_THRESHOLD:
         return COLLISION_PENALTY, True, True
 
@@ -65,6 +63,13 @@ def calculate_reward(
     # small bonus when roughly close to goal
     if dist < CLOSE_RADIUS:
         reward += CLOSE_BONUS
+
+    # heading reward
+    # alignment_angle = 0 → perfectly facing the goal
+    # Smaller magnitude = better orientation
+    if alignment_angle is not None:
+        heading_quality = 1.0 - (abs(alignment_angle) / math.pi)
+        reward += heading_quality * HEADING_REWARD_SCALE
 
     # mild sensor-based penalties (discourage getting too close)
     if max_sensor > WARNING_THRESHOLD:
